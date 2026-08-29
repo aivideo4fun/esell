@@ -1,0 +1,163 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// 1. Users
+model User {
+  id        String     @id @default(cuid())
+  name      String?
+  email     String     @unique
+  phone     String?    @unique
+  role      String     @default("CUSTOMER")
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  
+  addresses Address[]
+  orders    Order[]
+  reviews   Review[]
+  wishlists Wishlist[]
+}
+
+// 2. Categories
+model Category {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  slug        String    @unique
+  icon        String?
+  description String?
+  products    Product[]
+  createdAt   DateTime  @default(now())
+}
+
+// 3. Products
+model Product {
+  id            String         @id @default(cuid())
+  title         String
+  slug          String         @unique
+  description   String?
+  price         Float
+  originalPrice Float
+  stock         Int            @default(100)
+  sku           String?        @unique
+  badge         String?
+  rating        Float          @default(4.8)
+  categoryId    String
+  category      Category       @relation(fields: [categoryId], references: [id])
+  
+  isAmazonSynced Boolean       @default(false)
+  amazonAsin     String?
+  
+  images        ProductImage[]
+  orderItems    OrderItem[]
+  reviews       Review[]
+  wishlists     Wishlist[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+// 4. Product Images
+model ProductImage {
+  id        String   @id @default(cuid())
+  url       String
+  isPrimary Boolean  @default(false)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+// 5. Addresses
+model Address {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  fullName  String
+  phone     String
+  street    String
+  city      String
+  state     String
+  pincode   String
+  orders    Order[]
+  createdAt DateTime @default(now())
+}
+
+// 6. Orders
+model Order {
+  id              String      @id @default(cuid())
+  userId          String?
+  user            User?       @relation(fields: [userId], references: [id])
+  addressId       String
+  address         Address     @relation(fields: [addressId], references: [id])
+  
+  totalAmount     Float
+  orderStatus     String      @default("PAID")
+  paymentStatus   String      @default("SUCCESS")
+  
+  supplierStatus  String      @default("PENDING_MANUAL_ORDER")
+  trackingNumber  String?
+  trackingUrl     String?
+  channel         String      @default("WEBSITE")
+  
+  items           OrderItem[]
+  payments        Payment[]
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+}
+
+// 7. Order Items
+model OrderItem {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  quantity  Int
+  price     Float
+}
+
+// 8. Payments
+model Payment {
+  id            String   @id @default(cuid())
+  orderId       String
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  gateway       String   @default("RAZORPAY")
+  gatewayTxnId  String   @unique
+  amount        Float
+  status        String   @default("COMPLETED")
+  createdAt     DateTime @default(now())
+}
+
+// 9. Reviews
+model Review {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  rating    Int      @default(5)
+  comment   String?
+  createdAt DateTime @default(now())
+}
+
+// 10. Wishlists
+model Wishlist {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+// 11. Coupons
+model Coupon {
+  id            String    @id @default(cuid())
+  code          String    @unique
+  discountType  String    @default("PERCENTAGE")
+  discountValue Float
+  minOrderValue Float     @default(0)
+  isActive      Boolean   @default(true)
+  expiresAt     DateTime?
+}
