@@ -9,13 +9,14 @@ generator client {
 
 // 1. Users
 model User {
-  id        String     @id @default(cuid())
+  id        String    @id @default(cuid())
   name      String?
-  email     String     @unique
-  phone     String?    @unique
-  role      String     @default("CUSTOMER")
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  email     String    @unique
+  phone     String?   @unique
+  password  String?
+  role      String    @default("CUSTOMER")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   
   addresses Address[]
   orders    Order[]
@@ -87,6 +88,7 @@ model Address {
 // 6. Orders
 model Order {
   id              String      @id @default(cuid())
+  orderNumber     String?     @unique
   userId          String?
   user            User?       @relation(fields: [userId], references: [id])
   addressId       String

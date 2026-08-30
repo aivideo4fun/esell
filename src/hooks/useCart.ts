@@ -1,8 +1,12 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { Product } from "@/lib/constants";
 
-export interface CartItem extends Product {
+export interface CartItem {
+  id: string;
+  title: string;
+  price: number;
+  originalPrice?: number;
+  image: string;
   quantity: number;
 }
 
@@ -11,12 +15,14 @@ interface CartStore {
   isOpen: boolean;
   openCart: () => void;
   closeCart: () => void;
-  addItem: (product: Product) => void;
+  toggleCart: () => void;
+  addItem: (item: CartItem) => void;
   removeItem: (id: string) => void;
   updateQuantity: (id: string, quantity: number) => void;
   clearCart: () => void;
-  getTotalCount: () => number;
   getTotalPrice: () => number;
+  totalItems: number;
+  totalAmount: number;
 }
 
 export const useCart = create<CartStore>()(
@@ -26,56 +32,55 @@ export const useCart = create<CartStore>()(
       isOpen: false,
       openCart: () => set({ isOpen: true }),
       closeCart: () => set({ isOpen: false }),
-
-      addItem: (product) => {
+      toggleCart: () => set((state) => ({ isOpen: !state.isOpen })),
+      addItem: (item) => {
         const currentItems = get().items;
-        const existingItem = currentItems.find((item) => item.id === product.id);
+        const existingItem = currentItems.find((i) => i.id === item.id);
 
         if (existingItem) {
           set({
-            items: currentItems.map((item) =>
-              item.id === product.id
-                ? { ...item, quantity: item.quantity + 1 }
-                : item
+            items: currentItems.map((i) =>
+              i.id === item.id ? { ...i, quantity: i.quantity + (item.quantity || 1) } : i
             ),
             isOpen: true,
           });
         } else {
           set({
-            items: [...currentItems, { ...product, quantity: 1 }],
+            items: [...currentItems, { ...item, quantity: item.quantity || 1 }],
             isOpen: true,
           });
         }
       },
-
-      removeItem: (id) => {
-        set({ items: get().items.filter((item) => item.id !== id) });
-      },
-
-      updateQuantity: (id, quantity) => {
-        if (quantity <= 0) {
-          get().removeItem(id);
-          return;
-        }
-        set({
-          items: get().items.map((item) =>
-            item.id === id ? { ...item, quantity } : item
-          ),
-        });
-      },
-
+      removeItem: (id) =>
+        set((state) => ({
+          items: state.items.filter((item) => item.id !== id),
+        })),
+      updateQuantity: (id, quantity) =>
+        set((state) => ({
+          items:
+            quantity <= 0
+              ? state.items.filter((item) => item.id !== id)
+              : state.items.map((item) => (item.id === id ? { ...item, quantity } : item)),
+        })),
       clearCart: () => set({ items: [] }),
-
-      getTotalCount: () => {
-        return get().items.reduce((total, item) => total + item.quantity, 0);
-      },
-
       getTotalPrice: () => {
-        return get().items.reduce((total, item) => total + item.price * item.quantity, 0);
+        return get().items.reduce(
+          (total, item) => total + (Number(item.price) || 0) * (Number(item.quantity) || 1),
+          0
+        );
+      },
+      get totalItems() {
+        return get().items.reduce((total, item) => total + (item.quantity || 1), 0);
+      },
+      get totalAmount() {
+        return get().items.reduce(
+          (total, item) => total + (Number(item.price) || 0) * (Number(item.quantity) || 1),
+          0
+        );
       },
     }),
     {
-      name: "catchbuddy-cart",
+      name: "catchbuddy-cart-storage",
     }
   )
 );

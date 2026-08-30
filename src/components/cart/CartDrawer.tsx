@@ -1,118 +1,115 @@
 "use client";
 
 import { useCart } from "@/hooks/useCart";
-import { X, Plus, Minus, Trash2, ArrowRight } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { X, Trash2, Plus, Minus, ArrowRight, ShoppingBag } from "lucide-react";
 
 export default function CartDrawer() {
-  const { items, isOpen, closeCart, updateQuantity, removeItem, getTotalPrice } = useCart();
-  const [mounted, setMounted] = useState(false);
+  const { items, isOpen, closeCart, removeItem, updateQuantity } = useCart();
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  // Safe Total Calculation
+  const subtotal = items.reduce(
+    (sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 1),
+    0
+  );
 
-  if (!mounted || !isOpen) return null;
-
-  const totalPrice = getTotalPrice();
+  if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
-      {/* Backdrop */}
-      <div
-        onClick={closeCart}
-        className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
-      />
-
-      {/* Drawer */}
-      <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col z-10">
-        
-        {/* Header */}
-        <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-gray-900">Your Bag ({items.length})</h2>
-          <button
-            onClick={closeCart}
-            className="p-2 text-gray-400 hover:text-black rounded-lg hover:bg-gray-100 transition"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Item List */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {items.length === 0 ? (
-            <div className="text-center py-16">
-              <p className="text-gray-500 text-sm">Your shopping bag is empty.</p>
-              <button
-                onClick={closeCart}
-                className="mt-4 px-6 py-2 bg-gray-900 text-white rounded-full text-sm font-medium hover:bg-blue-600 transition"
-              >
-                Start Shopping
-              </button>
+    <div className="fixed inset-0 z-50 overflow-hidden bg-black/60 backdrop-blur-xs">
+      <div className="absolute inset-y-0 right-0 max-w-full flex pl-10">
+        <div className="w-screen max-w-md bg-white border-l border-gray-200 shadow-2xl flex flex-col justify-between">
+          
+          {/* Header */}
+          <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <ShoppingBag className="w-5 h-5 text-blue-600" />
+              <h2 className="text-lg font-black text-black">Your Shopping Cart</h2>
             </div>
-          ) : (
-            items.map((item) => (
-              <div key={item.id} className="flex gap-4 p-3 rounded-xl border border-gray-100 bg-gray-50/50">
-                <img
-                  src={item.image}
-                  alt={item.title}
-                  className="w-18 h-18 rounded-lg object-cover bg-white"
-                />
-                <div className="flex-1 flex flex-col justify-between">
-                  <div className="flex justify-between gap-2">
-                    <h4 className="text-sm font-semibold text-gray-900 line-clamp-1">{item.title}</h4>
-                    <button
-                      onClick={() => removeItem(item.id)}
-                      className="text-gray-400 hover:text-red-500 transition"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                  <div className="text-sm font-bold text-gray-950">₹{item.price}</div>
-                  
-                  {/* Quantity Controls */}
-                  <div className="flex items-center gap-3 mt-2">
-                    <div className="flex items-center border border-gray-200 rounded-lg bg-white">
+            <button
+              onClick={closeCart}
+              className="p-2 hover:bg-gray-100 rounded-full transition text-gray-500 hover:text-black cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Cart Items List */}
+          <div className="flex-1 overflow-y-auto p-6 divide-y divide-gray-100">
+            {items.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center space-y-3">
+                <ShoppingBag className="w-12 h-12 text-gray-300" />
+                <p className="text-sm font-bold text-gray-500">Your cart is empty</p>
+                <Link
+                  href="/shop"
+                  onClick={closeCart}
+                  className="px-4 py-2 bg-black text-white text-xs font-black rounded-xl hover:bg-blue-600 transition"
+                >
+                  Explore Trending Gadgets
+                </Link>
+              </div>
+            ) : (
+              items.map((item) => (
+                <div key={item.id} className="py-4 flex gap-4 items-center justify-between">
+                  <img
+                    src={item.image}
+                    alt={item.title}
+                    className="w-16 h-16 rounded-xl object-contain border border-gray-200 bg-gray-50 shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-xs font-black text-black truncate">{item.title}</h4>
+                    <p className="text-xs font-bold text-blue-600 mt-0.5">₹{item.price}</p>
+                    
+                    {/* Quantity Controls */}
+                    <div className="flex items-center gap-2 mt-2">
                       <button
                         onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                        className="p-1 hover:text-blue-600"
+                        className="w-6 h-6 border border-gray-300 rounded-md flex items-center justify-center text-black hover:bg-gray-100"
                       >
-                        <Minus className="w-3.5 h-3.5" />
+                        <Minus className="w-3 h-3" />
                       </button>
-                      <span className="px-2 text-xs font-semibold">{item.quantity}</span>
+                      <span className="text-xs font-black text-black">{item.quantity}</span>
                       <button
                         onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                        className="p-1 hover:text-blue-600"
+                        className="w-6 h-6 border border-gray-300 rounded-md flex items-center justify-center text-black hover:bg-gray-100"
                       >
-                        <Plus className="w-3.5 h-3.5" />
+                        <Plus className="w-3 h-3" />
                       </button>
                     </div>
                   </div>
+
+                  <button
+                    onClick={() => removeItem(item.id)}
+                    className="p-2 text-gray-400 hover:text-red-600 transition"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
-              </div>
-            ))
-          )}
-        </div>
-
-        {/* Footer / Checkout */}
-        {items.length > 0 && (
-          <div className="p-4 border-t border-gray-100 bg-gray-50/70 space-y-4">
-            <div className="flex justify-between items-center text-base font-bold text-gray-950">
-              <span>Subtotal:</span>
-              <span>₹{totalPrice}</span>
-            </div>
-            <p className="text-xs text-gray-500">Shipping & taxes calculated at checkout. Prepaid orders only.</p>
-            <Link
-              href="/checkout"
-              onClick={closeCart}
-              className="w-full flex items-center justify-center gap-2 py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition shadow-md shadow-blue-600/20"
-            >
-              Proceed to Prepaid Checkout <ArrowRight className="w-4 h-4" />
-            </Link>
+              ))
+            )}
           </div>
-        )}
 
+          {/* Footer Checkout Button */}
+          {items.length > 0 && (
+            <div className="p-6 border-t border-gray-200 bg-gray-50 space-y-4">
+              <div className="flex justify-between items-center text-sm font-black text-black">
+                <span>Subtotal:</span>
+                <span className="text-blue-600 text-lg">₹{subtotal}</span>
+              </div>
+              <p className="text-[11px] font-bold text-green-700 bg-green-50 border border-green-200 p-2 rounded-xl text-center">
+                ✨ ₹50 instant discount applied at prepaid checkout!
+              </p>
+              <Link
+                href="/checkout"
+                onClick={closeCart}
+                className="w-full py-3.5 bg-black hover:bg-blue-600 text-white rounded-2xl text-xs font-black flex items-center justify-center gap-2 transition cursor-pointer shadow-md"
+              >
+                Proceed to Checkout <ArrowRight className="w-4 h-4" />
+              </Link>
+            </div>
+          )}
+
+        </div>
       </div>
     </div>
   );
