@@ -1,33 +1,110 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
-import { ShieldCheck, Truck, RotateCcw, Zap, ShoppingBag, Sparkles } from "lucide-react";
+import { ShieldCheck, Truck, RotateCcw, Zap, ShoppingBag, Sparkles, Loader2 } from "lucide-react";
 import { useCart } from "@/hooks/useCart";
+
+interface ProductImage {
+  id: string;
+  url: string;
+  isPrimary: boolean;
+}
+
+interface Product {
+  id: string;
+  title: string;
+  slug: string;
+  description?: string;
+  price: number;
+  originalPrice: number;
+  stock: number;
+  badge?: string;
+  images: ProductImage[];
+}
 
 export default function ProductDetailPage() {
   const params = useParams();
   const router = useRouter();
   const cart = useCart();
   const [qty, setQty] = useState<number>(1);
+  const [product, setProduct] = useState<Product | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
   const rawId = params?.id;
-  const slug = Array.isArray(rawId) ? rawId[0] : (rawId as string) || "bottel-3398";
-  const title = slug.replace(/-/g, " ").toUpperCase();
+  const currentSlugOrId = Array.isArray(rawId) ? rawId[0] : (rawId as string);
 
-  const sellingPrice = 233;
-  const originalPrice = 1088;
+  useEffect(() => {
+    async function fetchProduct() {
+      try {
+        setLoading(true);
+        const res = await fetch("/api/products");
+        if (!res.ok) throw new Error("Failed to load products");
+        const data: Product[] = await res.json();
+
+        // Find product by slug or id
+        const found = data.find(
+          (p) =>
+            p.slug.toLowerCase() === currentSlugOrId?.toLowerCase() ||
+            p.id === currentSlugOrId
+        );
+
+        if (found) {
+          setProduct(found);
+        } else {
+          setError("Product not found");
+        }
+      } catch (err: any) {
+        setError(err?.message || "Failed to load product");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    if (currentSlugOrId) {
+      fetchProduct();
+    }
+  }, [currentSlugOrId]);
+
+  if (loading) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3">
+        <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
+        <p className="text-sm font-bold text-gray-500">Loading product details...</p>
+      </div>
+    );
+  }
+
+  if (error || !product) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4 text-center px-4">
+        <h2 className="text-2xl font-black text-gray-900">Product Not Found</h2>
+        <p className="text-gray-500 text-sm">The product you are looking for does not exist or has been removed.</p>
+        <Link
+          href="/shop"
+          className="bg-emerald-700 text-white font-bold px-6 py-2.5 rounded-xl hover:bg-emerald-800 transition"
+        >
+          Back to Shop
+        </Link>
+      </div>
+    );
+  }
+
+  // Dynamic values
+  const primaryImg = product.images?.find((img) => img.isPrimary)?.url || product.images?.[0]?.url || "/placeholder.png";
+  const sellingPrice = product.price;
+  const originalPrice = product.originalPrice;
   const discount = Math.round(((originalPrice - sellingPrice) / originalPrice) * 100);
-  const displayImage = "https://images.unsplash.com/photo-1602143407151-7111542de6e8?auto=format&fit=crop&w=800&q=80";
 
   const handleAddToCart = () => {
     cart.addItem({
-      id: slug,
-      title: title,
-      price: sellingPrice,
-      image: displayImage,
+      id: product.id, // Actual database ID passes to order
+      title: product.title,
+      price: product.price,
+      image: primaryImg,
       quantity: qty,
     });
     if (cart.openCart) {
@@ -37,10 +114,10 @@ export default function ProductDetailPage() {
 
   const handleBuyNow = () => {
     cart.addItem({
-      id: slug,
-      title: title,
-      price: sellingPrice,
-      image: displayImage,
+      id: product.id, // Actual database ID passes to order
+      title: product.title,
+      price: product.price,
+      image: primaryImg,
       quantity: qty,
     });
     router.push("/checkout");
@@ -54,7 +131,7 @@ export default function ProductDetailPage() {
           <span>/</span>
           <Link href="/shop" className="hover:text-[#065f46]">Shop</Link>
           <span>/</span>
-          <span className="text-[#0f172a] truncate max-w-xs">{title}</span>
+          <span className="text-[#0f172a] truncate max-w-xs">{product.title}</span>
         </nav>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
@@ -62,13 +139,15 @@ export default function ProductDetailPage() {
           <div className="lg:col-span-6 space-y-4">
             <div className="relative aspect-square w-full rounded-3xl bg-[#f8fafc] border border-gray-200 overflow-hidden flex items-center justify-center p-6">
               <img
-                src={displayImage}
-                alt={title}
+                src={primaryImg}
+                alt={product.title}
                 className="object-contain w-full h-full"
               />
-              <span className="absolute top-4 left-4 bg-[#16a34a] text-white text-xs font-black px-3 py-1 rounded-lg">
-                {discount}% OFF
-              </span>
+              {discount > 0 && (
+                <span className="absolute top-4 left-4 bg-[#16a34a] text-white text-xs font-black px-3 py-1 rounded-lg">
+                  {discount}% OFF
+                </span>
+              )}
             </div>
           </div>
 
@@ -79,8 +158,14 @@ export default function ProductDetailPage() {
             </div>
 
             <h1 className="text-2xl sm:text-4xl font-black text-[#0f172a] leading-tight capitalize">
-              {title}
+              {product.title}
             </h1>
+
+            {product.description && (
+              <p className="text-sm text-gray-600 leading-relaxed">
+                {product.description}
+              </p>
+            )}
 
             <div className="flex items-baseline gap-3 p-4 rounded-2xl bg-[#f8fafc] border border-gray-200">
               <span className="text-3xl font-black text-[#065f46]">₹{sellingPrice}</span>
