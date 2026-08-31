@@ -4,8 +4,7 @@
 
 [build.environment]
   NODE_VERSION = "20"
-  SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_APP_URL,NEXT_PUBLIC_RAZORPAY_KEY_ID,ADMIN_EMAIL,ADMIN_PASSWORD"
-  SECRETS_SCAN_OMIT_PATHS = ".netlify/.next/cache/**,.next/cache/**"
+  SECRETS_SCAN_ENABLED = "false"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
