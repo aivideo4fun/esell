@@ -1,11 +1,32 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Plus, Trash2, Tag, Loader2, Sparkles, Image as ImageIcon, X, AlertCircle } from "lucide-react";
 import { CATEGORIES } from "@/lib/constants";
 
+interface ProductImage {
+  url: string;
+}
+
+interface ProductCategory {
+  id?: string;
+  name?: string;
+  slug?: string;
+}
+
+interface AdminProduct {
+  id: string;
+  title: string;
+  price: number | string;
+  originalPrice?: number | string;
+  slug?: string;
+  badge?: string;
+  category?: ProductCategory;
+  images?: ProductImage[];
+}
+
 export default function AdminProductsPage() {
-  const [products, setProducts] = useState<any[]>([]);
+  const [products, setProducts] = useState<AdminProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -22,7 +43,7 @@ export default function AdminProductsPage() {
     badge: "BESTSELLER",
   });
 
-  const fetchProducts = async () => {
+  const fetchProducts = useCallback(async () => {
     try {
       setLoading(true);
       const res = await fetch("/api/admin/products");
@@ -30,16 +51,16 @@ export default function AdminProductsPage() {
       if (data.success) {
         setProducts(data.products);
       }
-    } catch (err) {
-      console.error("Error fetching products:", err);
+    } catch {
+      console.error("Error fetching products");
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchProducts();
-  }, []);
+    void fetchProducts();
+  }, [fetchProducts]);
 
   const handleImageUrlChange = (index: number, value: string) => {
     const updated = [...imageUrls];
@@ -82,11 +103,11 @@ export default function AdminProductsPage() {
           categorySlug: "gadgets",
           badge: "BESTSELLER",
         });
-        fetchProducts();
+        void fetchProducts();
       } else {
         alert("Error creating product: " + (data.error || "Unknown error"));
       }
-    } catch (err) {
+    } catch {
       alert("Something went wrong while creating the product.");
     } finally {
       setIsSubmitting(false);
@@ -101,11 +122,11 @@ export default function AdminProductsPage() {
       });
       const data = await res.json();
       if (data.success) {
-        setProducts(products.filter((p) => p.id !== id));
+        setProducts((prev) => prev.filter((p) => p.id !== id));
       } else {
         alert("Failed to delete product");
       }
-    } catch (err) {
+    } catch {
       alert("Error deleting product");
     }
   };
@@ -349,7 +370,9 @@ export default function AdminProductsPage() {
                   </td>
                   <td className="p-4">
                     <span className="font-black text-black text-sm">₹{item.price}</span>
-                    <span className="text-gray-500 line-through ml-1.5 text-xs font-bold">₹{item.originalPrice}</span>
+                    {item.originalPrice && (
+                      <span className="text-gray-500 line-through ml-1.5 text-xs font-bold">₹{item.originalPrice}</span>
+                    )}
                   </td>
                   <td className="p-4 text-right">
                     <button

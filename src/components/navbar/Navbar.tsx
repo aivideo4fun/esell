@@ -1,35 +1,70 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { ShoppingBag, Search, ShieldCheck, User, Truck } from "lucide-react";
+import { ShoppingBag, Search, ShieldCheck, User, LogOut } from "lucide-react";
 import { useCart } from "@/hooks/useCart";
 
+interface CustomerUser {
+  id?: string;
+  name?: string;
+  phone?: string;
+}
+
 export default function Navbar() {
-  const cart = useCart() as any;
+  const cart = useCart();
   const items = cart.items || [];
-  const cartCount = items.reduce((sum: number, item: any) => sum + (item.quantity || 1), 0);
+  const cartCount = items.reduce((sum, item) => sum + (item.quantity || 1), 0);
+
+  const [customer, setCustomer] = useState<CustomerUser | null>(null);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  useEffect(() => {
+    const checkCustomerAuth = async () => {
+      try {
+        const res = await fetch("/api/auth/customer");
+        const data = await res.json();
+        if (data.authenticated && data.user) {
+          setCustomer(data.user);
+        } else {
+          setCustomer(null);
+        }
+      } catch {
+        setCustomer(null);
+      }
+    };
+    void checkCustomerAuth();
+  }, []);
 
   const handleCartClick = () => {
-    if (typeof cart.openCart === "function") {
+    if (cart.openCart) {
       cart.openCart();
-    } else if (typeof cart.toggleCart === "function") {
-      cart.toggleCart();
     }
   };
 
-  return (
-    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-200">
-      {/* Top Notification Announcement Bar */}
-      <div className="bg-black text-white text-[11px] font-bold py-1.5 px-4 text-center tracking-wide flex items-center justify-center gap-2">
-        <Truck className="w-3.5 h-3.5 text-blue-400" />
-        <span>Prepaid UPI Orders: Flat ₹50 Instant Discount + Express Delivery Across India</span>
-      </div>
+  const handleLogout = () => {
+    document.cookie = "customer_id=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;";
+    setCustomer(null);
+    setDropdownOpen(false);
+    window.location.reload();
+  };
 
+  const tickerItems = [
+    "ON SALE NOW",
+    "PREPAID ₹50 INSTANT OFF",
+    "FREE SHIPPING",
+    "LIMITED TIME DEALS",
+    "DIRECT DISPATCH",
+  ];
+
+  return (
+    <header className="sticky top-0 z-40 bg-white border-b border-gray-100 shadow-sm">
+      {/* 1. TOP MAIN NAVIGATION BAR */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
-        {/* Brand Logo */}
-        <Link href="/" className="flex items-center gap-2">
-          <span className="text-xl font-black tracking-tight text-black">
-            Catch<span className="text-blue-600">Buddy</span>
+        {/* Logo */}
+        <Link href="/" className="flex items-center gap-1">
+          <span className="text-2xl font-black tracking-tight text-[#0f172a]">
+            Catch<span className="text-[#16a34a]">Buddy</span>
           </span>
         </Link>
 
@@ -39,47 +74,124 @@ export default function Navbar() {
             <input
               type="text"
               placeholder="Search trending gadgets, smart home tools..."
-              className="w-full pl-10 pr-4 py-2 bg-gray-100 border border-gray-200 rounded-xl text-xs font-semibold text-black placeholder:text-gray-400 focus:outline-none focus:border-blue-600"
+              className="w-full pl-10 pr-4 py-2 bg-[#f8fafc] border border-gray-200 rounded-xl text-xs font-semibold text-[#0f172a] placeholder:text-[#64748b] focus:outline-none focus:border-[#16a34a]"
             />
-            <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <Search className="w-4 h-4 text-[#64748b] absolute left-3.5 top-1/2 -translate-y-1/2" />
           </div>
         </div>
 
-        {/* Navigation Actions */}
-        <div className="flex items-center gap-4 sm:gap-6">
+        {/* Action Links */}
+        <div className="flex items-center gap-5 sm:gap-7">
           <Link
             href="/shop"
-            className="text-xs font-bold text-gray-700 hover:text-black transition"
+            className="text-xs font-bold text-[#64748b] hover:text-[#065f46] transition"
           >
             Catalog
           </Link>
           <Link
             href="/track-order"
-            className="text-xs font-bold text-gray-700 hover:text-black transition flex items-center gap-1"
+            className="text-xs font-bold text-[#64748b] hover:text-[#065f46] transition flex items-center gap-1.5"
           >
-            <ShieldCheck className="w-3.5 h-3.5 text-blue-600" /> Track Order
-          </Link>
-          <Link
-            href="/admin/login"
-            className="text-xs font-bold text-gray-700 hover:text-black transition flex items-center gap-1"
-          >
-            <User className="w-3.5 h-3.5" /> Admin
+            <ShieldCheck className="w-4 h-4 text-[#16a34a]" /> Track Order
           </Link>
 
-          {/* Cart Icon Drawer Trigger */}
+          {/* User Account / Login */}
+          {customer ? (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setDropdownOpen(!dropdownOpen)}
+                className="flex items-center gap-1.5 text-xs font-bold text-[#065f46] bg-[#f0fdf4] border border-[#bbf7d0] hover:bg-[#dcfce7] px-3.5 py-1.5 rounded-xl transition cursor-pointer"
+              >
+                <User className="w-3.5 h-3.5 text-[#16a34a]" />
+                <span className="max-w-25 truncate">{customer.name || customer.phone}</span>
+              </button>
+
+              {dropdownOpen && (
+                <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-2xl shadow-xl p-2 space-y-1 z-50">
+                  <div className="p-2 border-b border-gray-100">
+                    <p className="text-xs font-black text-[#0f172a] truncate">{customer.name || "My Account"}</p>
+                    <p className="text-[10px] text-[#64748b] font-semibold">{customer.phone}</p>
+                  </div>
+                  <Link
+                    href="/track-order"
+                    onClick={() => setDropdownOpen(false)}
+                    className="flex items-center gap-2 p-2 text-xs font-bold text-gray-700 hover:bg-[#f0fdf4] rounded-lg"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-[#16a34a]" /> My Orders
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-2 p-2 text-xs font-bold text-red-600 hover:bg-red-50 rounded-lg text-left cursor-pointer"
+                  >
+                    <LogOut className="w-3.5 h-3.5" /> Logout
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Link
+              href="/login"
+              className="text-xs font-bold text-[#64748b] hover:text-[#065f46] flex items-center gap-1.5 transition"
+            >
+              <User className="w-4 h-4 text-[#16a34a]" /> Login
+            </Link>
+          )}
+
+          {/* Shopping Cart Button */}
           <button
+            type="button"
             onClick={handleCartClick}
-            className="relative p-2 text-black hover:text-blue-600 transition cursor-pointer"
+            className="relative p-2 text-gray-800 hover:text-[#16a34a] transition cursor-pointer"
             aria-label="Shopping Cart"
           >
-            <ShoppingBag className="w-6 h-6" />
+            <ShoppingBag className="w-6 h-6 text-[#065f46]" />
             {cartCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-blue-600 text-white font-black text-[10px] w-5 h-5 rounded-full flex items-center justify-center shadow-sm">
+              <span className="absolute -top-1 -right-1 bg-[#16a34a] text-white font-black text-[10px] w-5 h-5 rounded-full flex items-center justify-center shadow-sm">
                 {cartCount}
               </span>
             )}
           </button>
         </div>
+      </div>
+
+      {/* 2. GREEN PROMO STRIP */}
+      <div className="bg-[#16a34a] text-white text-[11px] font-black uppercase tracking-widest py-1 text-center select-none">
+        LIMITED TIME: SAVE UP TO 30%
+      </div>
+
+      {/* 3. SCROLLING TICKER */}
+      <div className="bg-[#0f172a] text-white py-2.5 overflow-hidden flex items-center relative select-none">
+        <div className="ticker-track flex items-center gap-16 whitespace-nowrap text-xs font-black tracking-widest uppercase">
+          {[...tickerItems, ...tickerItems, ...tickerItems].map((item, idx) => (
+            <div key={idx} className="flex items-center gap-16">
+              <span>{item}</span>
+              <span className="text-[#22c55e] text-base font-light select-none">+</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 4. WAVY BOTTOM CURVE */}
+      <div className="relative w-full h-3 sm:h-4 bg-transparent -mt-px overflow-hidden pointer-events-none">
+        <svg
+          className="absolute inset-0 w-full h-full text-[#64748b] opacity-30"
+          viewBox="0 0 1440 30"
+          preserveAspectRatio="none"
+          fill="currentColor"
+        >
+          <path d="M0,0 L1440,0 L1440,12 C1200,30 900,2 600,24 C300,34 100,6 0,20 Z" />
+        </svg>
+
+        <svg
+          className="absolute inset-0 w-full h-full text-[#0f172a]"
+          viewBox="0 0 1440 30"
+          preserveAspectRatio="none"
+          fill="currentColor"
+        >
+          <path d="M0,0 L1440,0 L1440,8 C1100,26 850,0 500,18 C250,28 80,5 0,14 Z" />
+        </svg>
       </div>
     </header>
   );
