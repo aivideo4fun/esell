@@ -1,125 +1,72 @@
-import Link from "next/link";
-import { ShieldCheck, Truck, RotateCcw, Headphones, MessageSquare } from "lucide-react";
+import { MessageCircle, Mail, Clock, ShieldCheck, Headphones } from "lucide-react";
 
-export default function Footer() {
+export default function ContactPage() {
   return (
-    <footer className="bg-white border-t border-gray-200 mt-20">
-      
-      {/* Top Value Propositions */}
-      <div className="border-b border-gray-100 bg-gray-50/50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 grid grid-cols-2 md:grid-cols-4 gap-6">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-gray-950">100% Prepaid Safe</p>
-              <p className="text-[11px] text-gray-500">Secure &amp; encrypted</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-green-50 text-green-600 rounded-xl">
-              <Truck className="w-5 h-5" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-gray-950">Free Shipping</p>
-              <p className="text-[11px] text-gray-500">Pan-India delivery</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-purple-50 text-purple-600 rounded-xl">
-              <RotateCcw className="w-5 h-5" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-gray-950">5-Day Replacement</p>
-              <p className="text-[11px] text-gray-500">Zero-risk guarantee</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-amber-50 text-amber-600 rounded-xl">
-              <Headphones className="w-5 h-5" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-gray-950">Direct WhatsApp</p>
-              <p className="text-[11px] text-gray-500">Real-time assistance</p>
-            </div>
-          </div>
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-8">
+      {/* Title */}
+      <div className="text-center space-y-2">
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#f0fdf4] border border-[#bbf7d0] text-[#16a34a] text-xs font-black">
+          <Headphones className="w-3.5 h-3.5" /> CatchBuddy Customer Support
         </div>
+        <h1 className="text-3xl font-black text-gray-950">Contact Us</h1>
+        <p className="text-xs sm:text-sm text-gray-600 max-w-md mx-auto">
+          Need help with your order, dispatch, tracking, or replacement? Contact us directly:
+        </p>
       </div>
 
-      {/* Main Footer Links */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-8">
-          
-          {/* Brand Info */}
-          <div className="md:col-span-2 space-y-4">
-            <Link href="/" className="text-2xl font-black text-gray-950 tracking-tight">
-              Catch<span className="text-blue-600">Buddy</span>
-            </Link>
-            <p className="text-xs text-gray-600 max-w-sm leading-relaxed">
-              Curated everyday smart gadgets, lifestyle goods, kitchen essentials, toys &amp; car accessories. Sourced directly and delivered nationwide.
-            </p>
-            <a
-              href="https://wa.me/916350108713"
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-2 px-3.5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl text-xs font-bold transition"
-            >
-              <MessageSquare className="w-4 h-4" /> Chat on WhatsApp
-            </a>
+      {/* 2 Main Support Options */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-2xl mx-auto">
+        
+        {/* WhatsApp Card */}
+        <a
+          href="https://wa.me/916350108713?text=Hi%20CatchBuddy,%20I%20need%20help%20with%20my%20order"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="p-6 bg-white rounded-3xl border-2 border-gray-200 hover:border-[#16a34a] hover:shadow-lg transition flex flex-col justify-between space-y-4 text-center"
+        >
+          <div className="w-12 h-12 rounded-2xl bg-[#f0fdf4] border border-[#bbf7d0] flex items-center justify-center text-[#16a34a] mx-auto">
+            <MessageCircle className="w-6 h-6" />
           </div>
-
-          {/* Quick Links */}
           <div>
-            <h4 className="text-xs font-black uppercase tracking-wider text-gray-950 mb-3">Shop Collections</h4>
-            <ul className="space-y-2 text-xs text-gray-600 font-medium">
-              <li><Link href="/shop" className="hover:text-blue-600 transition">All Products</Link></li>
-              <li><Link href="/shop?category=toys" className="hover:text-blue-600 transition">🧸 Toys &amp; Games</Link></li>
-              <li><Link href="/shop?category=gadgets" className="hover:text-blue-600 transition">🔌 Smart Gadgets</Link></li>
-              <li><Link href="/shop?category=kitchen" className="hover:text-blue-600 transition">🍳 Kitchen Essentials</Link></li>
-              <li><Link href="/shop?category=car-accessories" className="hover:text-blue-600 transition">🚗 Car Accessories</Link></li>
-            </ul>
+            <h3 className="text-base font-black text-gray-950">WhatsApp Support</h3>
+            <p className="text-xs text-gray-500 mt-1">Instant chat help for orders &amp; delivery</p>
+            <p className="text-xs font-black text-[#16a34a] mt-2">+91 6350108713</p>
           </div>
+          <span className="w-full bg-[#16a34a] text-white text-xs font-black py-2.5 rounded-xl block">
+            Chat on WhatsApp →
+          </span>
+        </a>
 
-          {/* Customer Service */}
+        {/* Email Card */}
+        <a
+          href="mailto:support@catchbuddy.com"
+          className="p-6 bg-white rounded-3xl border-2 border-gray-200 hover:border-gray-900 hover:shadow-lg transition flex flex-col justify-between space-y-4 text-center"
+        >
+          <div className="w-12 h-12 rounded-2xl bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-800 mx-auto">
+            <Mail className="w-6 h-6" />
+          </div>
           <div>
-            <h4 className="text-xs font-black uppercase tracking-wider text-gray-950 mb-3">Customer Desk</h4>
-            <ul className="space-y-2 text-xs text-gray-600 font-medium">
-              <li><Link href="/track-order" className="hover:text-blue-600 transition">Track Your Order</Link></li>
-              <li><Link href="/shipping-policy" className="hover:text-blue-600 transition">Shipping &amp; Delivery</Link></li>
-              <li><Link href="/return-policy" className="hover:text-blue-600 transition">5-Day Easy Replacement</Link></li>
-              <li><Link href="/contact" className="hover:text-blue-600 transition">Contact Us</Link></li>
-            </ul>
+            <h3 className="text-base font-black text-gray-950">Email Support</h3>
+            <p className="text-xs text-gray-500 mt-1">Send us order inquiries &amp; queries</p>
+            <p className="text-xs font-black text-gray-950 mt-2">support@catchbuddy.com</p>
           </div>
+          <span className="w-full bg-gray-900 text-white text-xs font-black py-2.5 rounded-xl block">
+            Send Email →
+          </span>
+        </a>
 
-          {/* Admin Operations */}
-          <div>
-            <h4 className="text-xs font-black uppercase tracking-wider text-gray-950 mb-3">Operations</h4>
-            <ul className="space-y-2 text-xs text-gray-600 font-medium">
-              <li><Link href="/admin/orders" className="hover:text-blue-600 transition">Supplier Fulfillment Queue</Link></li>
-              <li><span className="text-gray-400">GST Invoice Ready</span></li>
-              <li><span className="text-gray-400">BaapStore Linked</span></li>
-            </ul>
-          </div>
-
-        </div>
-
-        {/* Bottom Bar */}
-        <div className="border-t border-gray-100 mt-12 pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-gray-500">
-          <p>© 2026 CatchBuddy Technologies. All rights reserved.</p>
-          <div className="flex items-center gap-4 font-medium">
-            <Link href="/shipping-policy" className="hover:text-gray-800">Shipping</Link>
-            <span>•</span>
-            <Link href="/return-policy" className="hover:text-gray-800">Replacement</Link>
-            <span>•</span>
-            <Link href="/contact" className="hover:text-gray-800">Support</Link>
-          </div>
-        </div>
       </div>
 
-    </footer>
+      {/* Support Hours Banner */}
+      <div className="max-w-2xl mx-auto p-4 bg-gray-50 rounded-2xl border border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-gray-600 font-semibold text-center sm:text-left">
+        <div className="flex items-center gap-2">
+          <Clock className="w-4 h-4 text-[#16a34a]" />
+          <span>Working Hours: Mon – Sat (10:00 AM – 7:00 PM IST)</span>
+        </div>
+        <div className="flex items-center gap-1 text-[#065f46] font-bold">
+          <ShieldCheck className="w-4 h-4" /> 100% Verified Desk
+        </div>
+      </div>
+    </div>
   );
 }
