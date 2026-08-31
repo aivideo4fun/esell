@@ -80,7 +80,7 @@ export default function ProductDetailPage() {
     }
   }, [currentSlugOrId]);
 
-  // Specific Product Share Functionality
+  // Product Share Functionality
   const handleShare = async () => {
     const productUrl = window.location.href;
     const shareData = {
@@ -96,7 +96,6 @@ export default function ProductDetailPage() {
         console.log("Share cancelled or failed", err);
       }
     } else {
-      // Fallback: Desktop clipboard copy
       await navigator.clipboard.writeText(productUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
@@ -127,7 +126,6 @@ export default function ProductDetailPage() {
     );
   }
 
-  // Dynamic values
   const primaryImg = product.images?.find((img) => img.isPrimary)?.url || product.images?.[0]?.url || "/placeholder.png";
   const sellingPrice = product.price;
   const originalPrice = product.originalPrice;
@@ -161,7 +159,7 @@ export default function ProductDetailPage() {
     <div className="min-h-screen bg-white text-[#0f172a] py-8 sm:py-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
-        {/* Navigation & Share Button Bar */}
+        {/* Navigation & Single Share Button */}
         <div className="flex items-center justify-between mb-6">
           <nav className="text-xs font-bold text-[#64748b] flex items-center gap-2">
             <Link href="/" className="hover:text-[#065f46]">Home</Link>
@@ -171,11 +169,11 @@ export default function ProductDetailPage() {
             <span className="text-[#0f172a] truncate max-w-xs">{product.title}</span>
           </nav>
 
-          {/* Share Button with Live Feedback */}
+          {/* Single Share Button */}
           <button
             onClick={handleShare}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-[#0f172a] text-xs font-bold rounded-xl transition cursor-pointer shadow-xs active:scale-95"
-            title="Share product link"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-[#0f172a] text-xs font-bold rounded-xl transition cursor-pointer shadow-xs active:scale-95"
+            title="Share this product"
           >
             {copied ? (
               <>
@@ -210,17 +208,8 @@ export default function ProductDetailPage() {
 
           {/* Product Info & Actions */}
           <div className="lg:col-span-6 space-y-6">
-            <div className="flex items-center justify-between">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#f0fdf4] border border-[#bbf7d0] text-[#16a34a] text-xs font-bold">
-                <Zap className="w-3.5 h-3.5 fill-[#16a34a]" /> Direct Verified Dispatch
-              </div>
-
-              <button
-                onClick={handleShare}
-                className="inline-flex items-center gap-1 text-xs font-bold text-[#64748b] hover:text-[#16a34a] transition cursor-pointer"
-              >
-                <Share2 className="w-3.5 h-3.5" /> Share Product
-              </button>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#f0fdf4] border border-[#bbf7d0] text-[#16a34a] text-xs font-bold">
+              <Zap className="w-3.5 h-3.5 fill-[#16a34a]" /> Direct Verified Dispatch
             </div>
 
             <h1 className="text-2xl sm:text-4xl font-black text-[#0f172a] leading-tight capitalize">
@@ -271,7 +260,7 @@ export default function ProductDetailPage() {
               </div>
             </div>
 
-            {/* Buttons */}
+            {/* Action Buttons */}
             <div className="flex flex-col sm:flex-row gap-3 pt-2">
               <button
                 type="button"
