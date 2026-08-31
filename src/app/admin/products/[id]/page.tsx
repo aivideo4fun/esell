@@ -4,6 +4,29 @@ import Link from "next/link";
 import { ShieldCheck, Truck, RotateCcw, Zap } from "lucide-react";
 import ProductDetailClient from "./ProductDetailClient";
 
+interface DbImage {
+  id: string;
+  url: string;
+  isPrimary?: boolean;
+}
+
+interface DbCategory {
+  id: string;
+  name: string;
+}
+
+interface DbProduct {
+  id: string;
+  title: string;
+  price: number;
+  originalPrice: number;
+  mrp?: number;
+  description: string | null;
+  images: (DbImage | string)[];
+  category: DbCategory | null;
+  slug: string | null;
+}
+
 export default async function ProductDetailPage({
   params,
 }: {
@@ -14,7 +37,7 @@ export default async function ProductDetailPage({
   const paramVal = Array.isArray(raw) ? raw.join("/") : raw || "";
   const cleanParam = decodeURIComponent(paramVal).trim();
 
-  let product: any = null;
+  let product: DbProduct | null = null;
 
   try {
     if (cleanParam) {
@@ -23,27 +46,27 @@ export default async function ProductDetailPage({
           OR: [{ slug: cleanParam }, { id: cleanParam }],
         },
         include: { images: true, category: true },
-      });
+      }) as unknown as DbProduct | null;
     }
 
     if (!product) {
       product = await prisma.product.findFirst({
         orderBy: { createdAt: "desc" },
         include: { images: true, category: true },
-      });
+      }) as unknown as DbProduct | null;
     }
   } catch (err) {
     console.error("DB Fetch Error:", err);
   }
 
   // Guaranteed product object
-  const currentProduct = product || {
+  const currentProduct: DbProduct = product || {
     id: "default-id",
     title: "Trending Smart Gadget",
     price: 233,
     originalPrice: 1088,
     description: "Premium quality verified viral gadget with durable built quality.",
-    category: { name: "KITCHEN" },
+    category: { id: "cat-1", name: "KITCHEN" },
     images: [],
     slug: "gadget",
   };
@@ -61,7 +84,9 @@ export default async function ProductDetailPage({
     price: sellingPrice,
     originalPrice: cutPrice,
     description: currentProduct.description,
-    images: currentProduct.images?.map((img: any) => (typeof img === "string" ? img : img.url)) || [],
+    images: (currentProduct.images || []).map((img: DbImage | string) =>
+      typeof img === "string" ? img : img.url
+    ),
     category: currentProduct.category?.name || "KITCHEN",
     slug: currentProduct.slug,
   };
