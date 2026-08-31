@@ -4,7 +4,17 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
-import { ShieldCheck, Truck, RotateCcw, Zap, ShoppingBag, Sparkles, Loader2 } from "lucide-react";
+import { 
+  ShieldCheck, 
+  Truck, 
+  RotateCcw, 
+  Zap, 
+  ShoppingBag, 
+  Sparkles, 
+  Loader2, 
+  Share2, 
+  Check 
+} from "lucide-react";
 import { useCart } from "@/hooks/useCart";
 
 interface ProductImage {
@@ -33,6 +43,7 @@ export default function ProductDetailPage() {
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState<boolean>(false);
 
   const rawId = params?.id;
   const currentSlugOrId = Array.isArray(rawId) ? rawId[0] : (rawId as string);
@@ -69,6 +80,29 @@ export default function ProductDetailPage() {
     }
   }, [currentSlugOrId]);
 
+  // Specific Product Share Functionality
+  const handleShare = async () => {
+    const productUrl = window.location.href;
+    const shareData = {
+      title: product?.title || "Check this product on CatchBuddy!",
+      text: `Buy ${product?.title} at ₹${product?.price} on CatchBuddy!`,
+      url: productUrl,
+    };
+
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData);
+      } catch (err) {
+        console.log("Share cancelled or failed", err);
+      }
+    } else {
+      // Fallback: Desktop clipboard copy
+      await navigator.clipboard.writeText(productUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3">
@@ -101,7 +135,7 @@ export default function ProductDetailPage() {
 
   const handleAddToCart = () => {
     cart.addItem({
-      id: product.id, // Actual database ID passes to order
+      id: product.id,
       title: product.title,
       price: product.price,
       image: primaryImg,
@@ -114,7 +148,7 @@ export default function ProductDetailPage() {
 
   const handleBuyNow = () => {
     cart.addItem({
-      id: product.id, // Actual database ID passes to order
+      id: product.id,
       title: product.title,
       price: product.price,
       image: primaryImg,
@@ -126,13 +160,36 @@ export default function ProductDetailPage() {
   return (
     <div className="min-h-screen bg-white text-[#0f172a] py-8 sm:py-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <nav className="text-xs font-bold text-[#64748b] mb-6 flex items-center gap-2">
-          <Link href="/" className="hover:text-[#065f46]">Home</Link>
-          <span>/</span>
-          <Link href="/shop" className="hover:text-[#065f46]">Shop</Link>
-          <span>/</span>
-          <span className="text-[#0f172a] truncate max-w-xs">{product.title}</span>
-        </nav>
+        
+        {/* Navigation & Share Button Bar */}
+        <div className="flex items-center justify-between mb-6">
+          <nav className="text-xs font-bold text-[#64748b] flex items-center gap-2">
+            <Link href="/" className="hover:text-[#065f46]">Home</Link>
+            <span>/</span>
+            <Link href="/shop" className="hover:text-[#065f46]">Shop</Link>
+            <span>/</span>
+            <span className="text-[#0f172a] truncate max-w-xs">{product.title}</span>
+          </nav>
+
+          {/* Share Button with Live Feedback */}
+          <button
+            onClick={handleShare}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-[#0f172a] text-xs font-bold rounded-xl transition cursor-pointer shadow-xs active:scale-95"
+            title="Share product link"
+          >
+            {copied ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-[#16a34a]" />
+                <span className="text-[#16a34a]">Link Copied!</span>
+              </>
+            ) : (
+              <>
+                <Share2 className="w-3.5 h-3.5 text-gray-700" />
+                <span>Share</span>
+              </>
+            )}
+          </button>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
           {/* Product Image */}
@@ -153,8 +210,17 @@ export default function ProductDetailPage() {
 
           {/* Product Info & Actions */}
           <div className="lg:col-span-6 space-y-6">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#f0fdf4] border border-[#bbf7d0] text-[#16a34a] text-xs font-bold">
-              <Zap className="w-3.5 h-3.5 fill-[#16a34a]" /> Direct Verified Dispatch
+            <div className="flex items-center justify-between">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#f0fdf4] border border-[#bbf7d0] text-[#16a34a] text-xs font-bold">
+                <Zap className="w-3.5 h-3.5 fill-[#16a34a]" /> Direct Verified Dispatch
+              </div>
+
+              <button
+                onClick={handleShare}
+                className="inline-flex items-center gap-1 text-xs font-bold text-[#64748b] hover:text-[#16a34a] transition cursor-pointer"
+              >
+                <Share2 className="w-3.5 h-3.5" /> Share Product
+              </button>
             </div>
 
             <h1 className="text-2xl sm:text-4xl font-black text-[#0f172a] leading-tight capitalize">
