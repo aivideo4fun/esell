@@ -79,7 +79,7 @@ export default function Footer() {
           <ul className="space-y-2 text-xs font-bold text-[#64748b]">
             <li><Link href="/track-order" className="hover:text-[#16a34a] transition">Track Your Order</Link></li>
             <li><Link href="/shipping" className="hover:text-[#16a34a] transition">Shipping &amp; Delivery</Link></li>
-            <li><Link href="/returns" className="hover:text-[#16a34a] transition">Return Policy</Link></li>
+            <li><Link href="/return-policy" className="hover:text-[#16a34a] transition">Return Policy</Link></li>
             <li><Link href="/contact" className="hover:text-[#16a34a] transition">Contact Us</Link></li>
           </ul>
         </div>
