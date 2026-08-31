@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import { useState, useEffect } from "react";
@@ -49,15 +50,15 @@ export default function AdminOrdersPage() {
       const res = await fetch("/api/admin/orders", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId, status: newStatus }),
+        body: JSON.stringify({ orderId, orderStatus: newStatus }),
       });
       const data = await res.json();
       if (data.success) {
         setOrders((prev) =>
-          prev.map((o) => (o.id === orderId ? { ...o, status: newStatus } : o))
+          prev.map((o) => (o.id === orderId ? { ...o, orderStatus: newStatus } : o))
         );
         if (selectedOrder && selectedOrder.id === orderId) {
-          setSelectedOrder({ ...selectedOrder, status: newStatus });
+          setSelectedOrder({ ...selectedOrder, orderStatus: newStatus });
         }
       } else {
         alert("Failed to update status");
@@ -71,14 +72,14 @@ export default function AdminOrdersPage() {
 
   // Status Metrics Calculation
   const totalRevenue = orders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
-  const pendingOrders = orders.filter((o) => o.status === "PENDING" || o.status === "PROCESSING").length;
-  const shippedOrders = orders.filter((o) => o.status === "SHIPPED").length;
-  const deliveredOrders = orders.filter((o) => o.status === "DELIVERED").length;
+  const pendingOrders = orders.filter((o) => (o.orderStatus || o.status) === "PENDING" || (o.orderStatus || o.status) === "PROCESSING" || (o.orderStatus || o.status) === "PAID").length;
+  const shippedOrders = orders.filter((o) => (o.orderStatus || o.status) === "SHIPPED").length;
+  const deliveredOrders = orders.filter((o) => (o.orderStatus || o.status) === "DELIVERED").length;
 
   const filteredOrders =
     statusFilter === "ALL"
       ? orders
-      : orders.filter((o) => o.status === statusFilter);
+      : orders.filter((o) => (o.orderStatus || o.status) === statusFilter);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -87,6 +88,7 @@ export default function AdminOrdersPage() {
       case "SHIPPED":
         return "bg-blue-100 text-blue-800 border-blue-300";
       case "PROCESSING":
+      case "PAID":
         return "bg-amber-100 text-amber-800 border-amber-300";
       case "CANCELLED":
         return "bg-red-100 text-red-800 border-red-300";
@@ -96,7 +98,7 @@ export default function AdminOrdersPage() {
   };
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto">
+    <div className="space-y-8 max-w-7xl mx-auto py-6 px-4">
       
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -143,7 +145,7 @@ export default function AdminOrdersPage() {
 
       {/* Status Filter Tabs */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
-        {["ALL", "PENDING", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED"].map((st) => (
+        {["ALL", "PAID", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED"].map((st) => (
           <button
             key={st}
             onClick={() => setStatusFilter(st)}
@@ -187,89 +189,98 @@ export default function AdminOrdersPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 font-bold text-black">
-                {filteredOrders.map((order) => (
-                  <tr key={order.id} className="hover:bg-gray-50 transition">
-                    
-                    {/* Order ID & Date */}
-                    <td className="p-4 align-top">
-                      <span className="font-mono text-xs font-black text-blue-700 block">
-                        #{order.orderNumber || order.id.slice(-6).toUpperCase()}
-                      </span>
-                      <span className="text-[10px] text-gray-500 font-semibold flex items-center gap-1 mt-1">
-                        <Calendar className="w-3 h-3" />
-                        {new Date(order.createdAt).toLocaleDateString("en-IN", {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        })}
-                      </span>
-                    </td>
+                {filteredOrders.map((order) => {
+                  const currentAddress = order.address || order.shippingAddress;
+                  const firstItem = order.items?.[0];
+                  const itemTitle = firstItem?.product?.title || firstItem?.title || "Product item";
 
-                    {/* Customer */}
-                    <td className="p-4 align-top space-y-0.5">
-                      <div className="font-black text-black flex items-center gap-1">
-                        <User className="w-3.5 h-3.5 text-gray-400" />
-                        {order.shippingAddress?.fullName || order.user?.name || "Direct Customer"}
-                      </div>
-                      <div className="text-[11px] text-gray-600 font-semibold flex items-center gap-1">
-                        <Phone className="w-3 h-3 text-gray-400" />
-                        {order.shippingAddress?.phone || "N/A"}
-                      </div>
-                      <div className="text-[10px] text-gray-500 truncate max-w-[180px]">
-                        {order.shippingAddress?.city}, {order.shippingAddress?.state} - {order.shippingAddress?.pincode}
-                      </div>
-                    </td>
+                  return (
+                    <tr key={order.id} className="hover:bg-gray-50 transition">
+                      
+                      {/* Order ID & Date */}
+                      <td className="p-4 align-top">
+                        <span className="font-mono text-xs font-black text-blue-700 block">
+                          #{order.orderNumber || order.id.slice(-6).toUpperCase()}
+                        </span>
+                        <span className="text-[10px] text-gray-500 font-semibold flex items-center gap-1 mt-1">
+                          <Calendar className="w-3 h-3" />
+                          {new Date(order.createdAt).toLocaleDateString("en-IN", {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                          })}
+                        </span>
+                      </td>
 
-                    {/* Items */}
-                    <td className="p-4 align-top">
-                      <span className="font-black text-black">
-                        {order.items?.length || 1} Item(s)
-                      </span>
-                      <div className="text-[10px] text-gray-500 font-semibold line-clamp-1 max-w-[160px]">
-                        {order.items?.[0]?.title || "Product item"}
-                      </div>
-                    </td>
+                      {/* Customer */}
+                      <td className="p-4 align-top space-y-0.5">
+                        <div className="font-black text-black flex items-center gap-1">
+                          <User className="w-3.5 h-3.5 text-gray-400" />
+                          {currentAddress?.fullName || order.user?.name || "Direct Customer"}
+                        </div>
+                        <div className="text-[11px] text-gray-600 font-semibold flex items-center gap-1">
+                          <Phone className="w-3 h-3 text-gray-400" />
+                          {currentAddress?.phone || order.user?.phone || "N/A"}
+                        </div>
+                        <div className="text-[10px] text-gray-500 truncate max-w-[180px]">
+                          {currentAddress?.street ? `${currentAddress.street}, ` : ""}
+                          {currentAddress?.city ? `${currentAddress.city}, ` : ""}
+                          {currentAddress?.state ? `${currentAddress.state} - ` : ""}
+                          {currentAddress?.pincode || ""}
+                        </div>
+                      </td>
 
-                    {/* Total & Payment Status */}
-                    <td className="p-4 align-top space-y-1">
-                      <span className="font-black text-black text-sm block">
-                        ₹{order.totalAmount}
-                      </span>
-                      <span className="inline-block px-2 py-0.5 bg-green-100 text-green-800 border border-green-300 text-[9px] font-black rounded uppercase">
-                        {order.paymentStatus || "PAID"}
-                      </span>
-                    </td>
+                      {/* Items */}
+                      <td className="p-4 align-top">
+                        <span className="font-black text-black">
+                          {order.items?.length || 1} Item(s)
+                        </span>
+                        <div className="text-[10px] text-gray-500 font-semibold line-clamp-1 max-w-[160px]">
+                          {itemTitle}
+                        </div>
+                      </td>
 
-                    {/* Status Dropdown */}
-                    <td className="p-4 align-top">
-                      <select
-                        disabled={updatingId === order.id}
-                        value={order.status}
-                        onChange={(e) => handleStatusChange(order.id, e.target.value)}
-                        className={`p-1.5 rounded-lg text-xs font-black border-2 cursor-pointer focus:outline-none ${getStatusBadge(
-                          order.status
-                        )}`}
-                      >
-                        <option value="PENDING">PENDING</option>
-                        <option value="PROCESSING">PROCESSING</option>
-                        <option value="SHIPPED">SHIPPED</option>
-                        <option value="DELIVERED">DELIVERED</option>
-                        <option value="CANCELLED">CANCELLED</option>
-                      </select>
-                    </td>
+                      {/* Total & Payment Status */}
+                      <td className="p-4 align-top space-y-1">
+                        <span className="font-black text-black text-sm block">
+                          ₹{order.totalAmount}
+                        </span>
+                        <span className="inline-block px-2 py-0.5 bg-green-100 text-green-800 border border-green-300 text-[9px] font-black rounded uppercase">
+                          {order.paymentStatus || "PAID"}
+                        </span>
+                      </td>
 
-                    {/* Actions */}
-                    <td className="p-4 align-top text-right">
-                      <button
-                        onClick={() => setSelectedOrder(order)}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-black text-xs font-bold rounded-lg transition cursor-pointer"
-                      >
-                        <Eye className="w-3.5 h-3.5" /> View
-                      </button>
-                    </td>
+                      {/* Status Dropdown */}
+                      <td className="p-4 align-top">
+                        <select
+                          disabled={updatingId === order.id}
+                          value={order.orderStatus || order.status || "PAID"}
+                          onChange={(e) => handleStatusChange(order.id, e.target.value)}
+                          className={`p-1.5 rounded-lg text-xs font-black border-2 cursor-pointer focus:outline-none ${getStatusBadge(
+                            order.orderStatus || order.status || "PAID"
+                          )}`}
+                        >
+                          <option value="PAID">PAID</option>
+                          <option value="PROCESSING">PROCESSING</option>
+                          <option value="SHIPPED">SHIPPED</option>
+                          <option value="DELIVERED">DELIVERED</option>
+                          <option value="CANCELLED">CANCELLED</option>
+                        </select>
+                      </td>
 
-                  </tr>
-                ))}
+                      {/* Actions */}
+                      <td className="p-4 align-top text-right">
+                        <button
+                          onClick={() => setSelectedOrder(order)}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-black text-xs font-bold rounded-lg transition cursor-pointer"
+                        >
+                          <Eye className="w-3.5 h-3.5" /> View
+                        </button>
+                      </td>
+
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -304,13 +315,19 @@ export default function AdminOrdersPage() {
                 <MapPin className="w-4 h-4 text-blue-600" /> Customer Shipping Address
               </h4>
               <div className="text-xs text-black font-semibold space-y-0.5">
-                <p className="font-bold text-sm">{selectedOrder.shippingAddress?.fullName || selectedOrder.user?.name || "Direct Customer"}</p>
-                <p>{selectedOrder.shippingAddress?.street || "Address line"}</p>
+                <p className="font-bold text-sm">
+                  {(selectedOrder.address || selectedOrder.shippingAddress)?.fullName || selectedOrder.user?.name || "Direct Customer"}
+                </p>
                 <p>
-                  {selectedOrder.shippingAddress?.city}, {selectedOrder.shippingAddress?.state} - {selectedOrder.shippingAddress?.pincode}
+                  {(selectedOrder.address || selectedOrder.shippingAddress)?.street || "No street address"}
+                </p>
+                <p>
+                  {(selectedOrder.address || selectedOrder.shippingAddress)?.city ? `${(selectedOrder.address || selectedOrder.shippingAddress).city}, ` : ""}
+                  {(selectedOrder.address || selectedOrder.shippingAddress)?.state ? `${(selectedOrder.address || selectedOrder.shippingAddress).state} - ` : ""}
+                  {(selectedOrder.address || selectedOrder.shippingAddress)?.pincode || ""}
                 </p>
                 <p className="pt-1 text-blue-700 font-bold">
-                  📞 Phone: {selectedOrder.shippingAddress?.phone || "N/A"}
+                  📞 Phone: {(selectedOrder.address || selectedOrder.shippingAddress)?.phone || selectedOrder.user?.phone || "N/A"}
                 </p>
               </div>
             </div>
@@ -321,22 +338,27 @@ export default function AdminOrdersPage() {
                 Products in this Order ({selectedOrder.items?.length || 1})
               </h4>
               <div className="divide-y divide-gray-200 border border-gray-200 rounded-2xl p-2 bg-white">
-                {selectedOrder.items?.map((item: any) => (
-                  <div key={item.id} className="py-2.5 px-2 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <img
-                        src={item.image || "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=500&q=80"}
-                        alt=""
-                        className="w-12 h-12 rounded-xl object-contain border border-gray-200 bg-gray-50"
-                      />
-                      <div>
-                        <p className="font-black text-xs text-black">{item.title}</p>
-                        <p className="text-[11px] text-gray-500 font-semibold">Qty: {item.quantity}</p>
+                {selectedOrder.items?.map((item: any) => {
+                  const itemImg = item.product?.images?.[0]?.url || item.image || "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=500&q=80";
+                  const itemTitle = item.product?.title || item.title || "Product item";
+
+                  return (
+                    <div key={item.id} className="py-2.5 px-2 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={itemImg}
+                          alt=""
+                          className="w-12 h-12 rounded-xl object-contain border border-gray-200 bg-gray-50"
+                        />
+                        <div>
+                          <p className="font-black text-xs text-black">{itemTitle}</p>
+                          <p className="text-[11px] text-gray-500 font-semibold">Qty: {item.quantity}</p>
+                        </div>
                       </div>
+                      <span className="font-black text-xs text-black">₹{item.price * item.quantity}</span>
                     </div>
-                    <span className="font-black text-xs text-black">₹{item.price * item.quantity}</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
@@ -344,7 +366,7 @@ export default function AdminOrdersPage() {
             <div className="bg-gray-100 p-4 rounded-2xl space-y-1.5 text-xs font-bold text-black">
               <div className="flex justify-between">
                 <span className="text-gray-600">Subtotal:</span>
-                <span>₹{selectedOrder.subtotal || selectedOrder.totalAmount}</span>
+                <span>₹{selectedOrder.totalAmount}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Shipping:</span>
