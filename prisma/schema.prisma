@@ -4,19 +4,20 @@ datasource db {
 }
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 // 1. Users
 model User {
-  id        String   @id @default(cuid())
+  id        String     @id @default(cuid())
   name      String?
-  email     String   @unique
-  phone     String?  @unique
+  email     String     @unique
+  phone     String?    @unique
   password  String?
-  role      String   @default("CUSTOMER")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  role      String     @default("CUSTOMER")
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
 
   addresses Address[]
   orders    Order[]
@@ -110,31 +111,31 @@ model Address {
 
 // 8. Orders
 model Order {
-  id           String   @id @default(cuid())
-  orderNumber  String?  @unique
+  id            String    @id @default(cuid())
+  orderNumber   String?   @unique
   
   // Relations: Can belong to either User or direct Customer
-  userId       String?
-  user         User?     @relation(fields: [userId], references: [id])
-  customerId   String?
-  customer     Customer? @relation(fields: [customerId], references: [id])
+  userId        String?
+  user          User?     @relation(fields: [userId], references: [id])
+  customerId    String?
+  customer      Customer? @relation(fields: [customerId], references: [id])
 
-  addressId    String
-  address      Address  @relation(fields: [addressId], references: [id])
+  addressId     String
+  address       Address   @relation(fields: [addressId], references: [id])
 
   totalAmount   Float
-  orderStatus   String   @default("PAID")
-  paymentStatus String   @default("SUCCESS")
+  orderStatus   String    @default("PAID")
+  paymentStatus String    @default("SUCCESS")
 
-  supplierStatus String  @default("PENDING_MANUAL_ORDER")
+  supplierStatus String   @default("PENDING_MANUAL_ORDER")
   trackingNumber String?
   trackingUrl    String?
-  channel        String  @default("WEBSITE")
+  channel        String   @default("WEBSITE")
 
   items     OrderItem[]
   payments  Payment[]
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 }
 
 // 9. Order Items
