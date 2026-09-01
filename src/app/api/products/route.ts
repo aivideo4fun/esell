@@ -1,32 +1,29 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
-export async function GET(request: Request) {
+export async function GET(req: Request) {
   try {
-    const { searchParams } = new URL(request.url);
+    const { searchParams } = new URL(req.url);
     const category = searchParams.get("category");
     const search = searchParams.get("search");
 
-    const where: any = {};
+    const whereClause: any = {};
 
-    if (category && category !== "all") {
-      where.category = {
+    if (category && category !== "ALL") {
+      whereClause.category = {
         name: { equals: category, mode: "insensitive" },
       };
     }
 
     if (search) {
-      where.OR = [
+      whereClause.OR = [
         { title: { contains: search, mode: "insensitive" } },
         { description: { contains: search, mode: "insensitive" } },
       ];
     }
 
     const products = await prisma.product.findMany({
-      where,
+      where: whereClause,
       include: {
         images: true,
         category: true,
@@ -34,11 +31,11 @@ export async function GET(request: Request) {
       orderBy: { createdAt: "desc" },
     });
 
-    return NextResponse.json(products);
+    return NextResponse.json({ success: true, products });
   } catch (error: any) {
-    console.error("Fetch Products API Error:", error?.message || error);
+    console.error("Products API error:", error);
     return NextResponse.json(
-      { error: "Failed to fetch products", details: error?.message },
+      { success: false, error: error?.message || "Failed to load products" },
       { status: 500 }
     );
   }
