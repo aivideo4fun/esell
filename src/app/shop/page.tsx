@@ -2,12 +2,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { 
   ShoppingBag, 
   Heart, 
   Search, 
-  SlidersHorizontal, 
   Loader2, 
   Sparkles,
   Check
@@ -15,14 +13,22 @@ import {
 import { useCart } from "@/hooks/useCart";
 import { useWishlist } from "@/hooks/useWishlist";
 
+interface ProductImage {
+  url: string;
+}
+
+interface ProductCategory {
+  name: string;
+}
+
 interface Product {
   id: string;
   title: string;
-  slug: string;
+  slug?: string;
   price: number;
   originalPrice?: number;
-  images?: Array<{ url: string }>;
-  category?: { name: string };
+  images?: ProductImage[];
+  category?: ProductCategory;
   stock?: number;
 }
 
@@ -52,10 +58,14 @@ export default function ShopPage() {
       }
     };
 
-    fetchProducts();
+    void fetchProducts();
   }, []);
 
-  const categories = ["ALL", ...Array.from(new Set(products.map((p) => p.category?.name).filter(Boolean)))];
+  const rawCategories = products
+    .map((p) => p.category?.name)
+    .filter((name): name is string => typeof name === "string" && Boolean(name));
+
+  const categories = ["ALL", ...Array.from(new Set(rawCategories))];
 
   const filteredProducts = products.filter((item) => {
     const matchesCategory = selectedCategory === "ALL" || item.category?.name === selectedCategory;
@@ -74,6 +84,16 @@ export default function ShopPage() {
     });
     setAddedId(product.id);
     setTimeout(() => setAddedId(null), 1500);
+  };
+
+  const handleWishlistToggle = (product: Product, e: React.MouseEvent) => {
+    e.preventDefault();
+    toggleWishlist({
+      id: product.id,
+      title: product.title,
+      price: product.price,
+      image: product.images?.[0]?.url || "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=500&q=80",
+    });
   };
 
   return (
@@ -106,7 +126,7 @@ export default function ShopPage() {
 
         {/* Categories Bar */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
-          {categories.map((cat: any) => (
+          {categories.map((cat) => (
             <button
               key={cat}
               onClick={() => setSelectedCategory(cat)}
@@ -141,7 +161,7 @@ export default function ShopPage() {
               const imgUrl =
                 product.images?.[0]?.url ||
                 "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=500&q=80";
-              const isWishlisted = wishlist.some((w: any) => w.id === product.id);
+              const isWishlisted = wishlist.some((w) => w.id === product.id);
 
               return (
                 <div
@@ -155,10 +175,7 @@ export default function ShopPage() {
                       className="w-full h-full object-contain p-4 group-hover:scale-105 transition duration-300"
                     />
                     <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        toggleWishlist(product);
-                      }}
+                      onClick={(e) => handleWishlistToggle(product, e)}
                       className="absolute top-2.5 right-2.5 p-2 bg-white/90 backdrop-blur-xs rounded-full border border-slate-100 shadow-2xs hover:bg-white text-slate-700 hover:text-red-500 transition cursor-pointer"
                       title="Add to Wishlist"
                     >

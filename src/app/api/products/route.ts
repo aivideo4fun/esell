@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 
 export async function GET(req: Request) {
   try {
@@ -7,7 +8,7 @@ export async function GET(req: Request) {
     const category = searchParams.get("category");
     const search = searchParams.get("search");
 
-    const whereClause: any = {};
+    const whereClause: Prisma.ProductWhereInput = {};
 
     if (category && category !== "ALL") {
       whereClause.category = {
@@ -32,11 +33,8 @@ export async function GET(req: Request) {
     });
 
     return NextResponse.json({ success: true, products });
-  } catch (error: any) {
-    console.error("Products API error:", error);
-    return NextResponse.json(
-      { success: false, error: error?.message || "Failed to load products" },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to load products";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

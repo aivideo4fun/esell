@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 
-// GET: Fetch all saved addresses for logged-in user
 export async function GET() {
   try {
     const cookieStore = await cookies();
@@ -14,19 +13,16 @@ export async function GET() {
 
     const addresses = await prisma.address.findMany({
       where: { userId: customerId },
-      orderBy: { isDefault: "desc" },
+      orderBy: { createdAt: "desc" },
     });
 
     return NextResponse.json({ success: true, addresses });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error?.message || "Failed to load addresses" },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to load addresses";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
 
-// POST: Add new address
 export async function POST(req: Request) {
   try {
     const cookieStore = await cookies();
@@ -37,15 +33,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { fullName, phone, street, city, state, pincode, isDefault } = body;
-
-    if (isDefault) {
-      // Reset other default addresses
-      await prisma.address.updateMany({
-        where: { userId: customerId },
-        data: { isDefault: false },
-      });
-    }
+    const { fullName, phone, street, city, state, pincode } = body;
 
     const newAddress = await prisma.address.create({
       data: {
@@ -56,20 +44,16 @@ export async function POST(req: Request) {
         city,
         state,
         pincode,
-        isDefault: Boolean(isDefault),
       },
     });
 
     return NextResponse.json({ success: true, address: newAddress });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error?.message || "Failed to save address" },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to save address";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
 
-// DELETE: Remove address
 export async function DELETE(req: Request) {
   try {
     const cookieStore = await cookies();
@@ -91,10 +75,8 @@ export async function DELETE(req: Request) {
     });
 
     return NextResponse.json({ success: true, message: "Address deleted" });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error?.message || "Failed to delete address" },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to delete address";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

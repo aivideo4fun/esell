@@ -2,11 +2,24 @@
 
 import { useState } from "react";
 import { Truck, Search, CheckCircle2, Clock } from "lucide-react";
-import Link from "next/link";
+
+interface TrackingStep {
+  title: string;
+  desc: string;
+  completed: boolean;
+}
+
+interface TrackingDetails {
+  orderId: string;
+  carrier: string;
+  awb: string;
+  estimatedDelivery: string;
+  steps: TrackingStep[];
+}
 
 export default function TrackOrderPage() {
   const [orderQuery, setOrderQuery] = useState("");
-  const [trackingData, setTrackingData] = useState<any | null>(null);
+  const [trackingData, setTrackingData] = useState<TrackingDetails | null>(null);
 
   const handleTrack = (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,10 +87,10 @@ export default function TrackOrderPage() {
             </div>
 
             <div className="space-y-6 relative pl-6 border-l-2 border-slate-100 ml-4">
-              {trackingData.steps.map((step: any, idx: number) => (
+              {trackingData.steps.map((step, idx) => (
                 <div key={idx} className="relative">
                   <div
-                    className={`absolute -left-[31px] top-0 w-6 h-6 rounded-full border-2 flex items-center justify-center bg-white ${
+                    className={`absolute -left-7.75 top-0 w-6 h-6 rounded-full border-2 flex items-center justify-center bg-white ${
                       step.completed
                         ? "border-emerald-600 text-emerald-600"
                         : "border-slate-300 text-slate-400"
