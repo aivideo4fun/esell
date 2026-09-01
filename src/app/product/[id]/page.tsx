@@ -13,9 +13,11 @@ import {
   Sparkles, 
   Loader2, 
   Share2, 
-  Check 
+  Check,
+  Heart
 } from "lucide-react";
 import { useCart } from "@/hooks/useCart";
+import { useWishlist } from "@/hooks/useWishlist";
 
 interface ProductImage {
   id: string;
@@ -39,6 +41,8 @@ export default function ProductDetailPage() {
   const params = useParams();
   const router = useRouter();
   const cart = useCart();
+  const { toggleWishlist, isInWishlist } = useWishlist();
+
   const [qty, setQty] = useState<number>(1);
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -56,7 +60,6 @@ export default function ProductDetailPage() {
         if (!res.ok) throw new Error("Failed to load products");
         const data: Product[] = await res.json();
 
-        // Find product by slug or id
         const found = data.find(
           (p) =>
             p.slug.toLowerCase() === currentSlugOrId?.toLowerCase() ||
@@ -80,7 +83,6 @@ export default function ProductDetailPage() {
     }
   }, [currentSlugOrId]);
 
-  // Product Share Functionality
   const handleShare = async () => {
     const productUrl = window.location.href;
     const shareData = {
@@ -93,7 +95,7 @@ export default function ProductDetailPage() {
       try {
         await navigator.share(shareData);
       } catch (err) {
-        console.log("Share cancelled or failed", err);
+        console.log("Share cancelled", err);
       }
     } else {
       await navigator.clipboard.writeText(productUrl);
@@ -130,6 +132,7 @@ export default function ProductDetailPage() {
   const sellingPrice = product.price;
   const originalPrice = product.originalPrice;
   const discount = Math.round(((originalPrice - sellingPrice) / originalPrice) * 100);
+  const isWishlisted = isInWishlist(product.id);
 
   const handleAddToCart = () => {
     cart.addItem({
@@ -159,7 +162,7 @@ export default function ProductDetailPage() {
     <div className="min-h-screen bg-white text-[#0f172a] py-8 sm:py-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
-        {/* Navigation & Single Share Button */}
+        {/* Navigation & Action Bar */}
         <div className="flex items-center justify-between mb-6">
           <nav className="text-xs font-bold text-[#64748b] flex items-center gap-2">
             <Link href="/" className="hover:text-[#065f46]">Home</Link>
@@ -169,24 +172,54 @@ export default function ProductDetailPage() {
             <span className="text-[#0f172a] truncate max-w-xs">{product.title}</span>
           </nav>
 
-          {/* Single Share Button */}
-          <button
-            onClick={handleShare}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-[#0f172a] text-xs font-bold rounded-xl transition cursor-pointer shadow-xs active:scale-95"
-            title="Share this product"
-          >
-            {copied ? (
-              <>
-                <Check className="w-3.5 h-3.5 text-[#16a34a]" />
-                <span className="text-[#16a34a]">Link Copied!</span>
-              </>
-            ) : (
-              <>
-                <Share2 className="w-3.5 h-3.5 text-gray-700" />
-                <span>Share</span>
-              </>
-            )}
-          </button>
+          {/* Action Buttons: Wishlist + Share */}
+          <div className="flex items-center gap-2">
+            {/* Wishlist Heart Button */}
+            <button
+              onClick={() =>
+                toggleWishlist({
+                  id: product.id,
+                  title: product.title,
+                  price: sellingPrice,
+                  originalPrice: originalPrice,
+                  image: primaryImg,
+                  slug: product.slug,
+                })
+              }
+              className={`p-2 rounded-xl border transition cursor-pointer flex items-center gap-1 text-xs font-bold ${
+                isWishlisted
+                  ? "bg-red-50 border-red-200 text-red-600"
+                  : "bg-gray-100 border-gray-200 text-gray-700 hover:bg-gray-200"
+              }`}
+              title={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
+            >
+              <Heart
+                className={`w-4 h-4 transition ${
+                  isWishlisted ? "fill-red-500 text-red-500 scale-110" : "text-gray-700"
+                }`}
+              />
+              <span className="hidden sm:inline">{isWishlisted ? "Saved" : "Wishlist"}</span>
+            </button>
+
+            {/* Single Share Button */}
+            <button
+              onClick={handleShare}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-gray-100 hover:bg-gray-200 text-[#0f172a] text-xs font-bold rounded-xl transition cursor-pointer shadow-xs active:scale-95 border border-gray-200"
+              title="Share this product"
+            >
+              {copied ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-[#16a34a]" />
+                  <span className="text-[#16a34a]">Link Copied!</span>
+                </>
+              ) : (
+                <>
+                  <Share2 className="w-3.5 h-3.5 text-gray-700" />
+                  <span>Share</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">

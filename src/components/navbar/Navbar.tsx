@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { ShoppingBag, Search, ShieldCheck, User, LogOut } from "lucide-react";
+import { ShoppingBag, Search, ShieldCheck, User, LogOut, Heart } from "lucide-react";
 import { useCart } from "@/hooks/useCart";
+import { useWishlist } from "@/hooks/useWishlist";
 
 interface CustomerUser {
   id?: string;
@@ -13,8 +14,11 @@ interface CustomerUser {
 
 export default function Navbar() {
   const cart = useCart();
+  const { wishlist } = useWishlist();
+
   const items = cart.items || [];
   const cartCount = items.reduce((sum, item) => sum + (item.quantity || 1), 0);
+  const wishlistCount = wishlist.length;
 
   const [customer, setCustomer] = useState<CustomerUser | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -81,18 +85,32 @@ export default function Navbar() {
         </div>
 
         {/* Action Links */}
-        <div className="flex items-center gap-5 sm:gap-7">
+        <div className="flex items-center gap-4 sm:gap-6">
           <Link
             href="/shop"
-            className="text-xs font-bold text-[#64748b] hover:text-[#065f46] transition"
+            className="text-xs font-bold text-[#64748b] hover:text-[#065f46] transition hidden sm:inline"
           >
             Catalog
           </Link>
           <Link
             href="/track-order"
-            className="text-xs font-bold text-[#64748b] hover:text-[#065f46] transition flex items-center gap-1.5"
+            className="text-xs font-bold text-[#64748b] hover:text-[#065f46] transition hidden sm:flex items-center gap-1.5"
           >
             <ShieldCheck className="w-4 h-4 text-[#16a34a]" /> Track Order
+          </Link>
+
+          {/* Wishlist Link with Live Counter */}
+          <Link
+            href="/wishlist"
+            className="relative p-2 text-gray-700 hover:text-red-500 transition cursor-pointer"
+            title="My Wishlist"
+          >
+            <Heart className="w-5 h-5 text-gray-800 hover:text-red-500" />
+            {wishlistCount > 0 && (
+              <span className="absolute top-0 right-0 bg-red-500 text-white font-black text-[9px] w-4 h-4 rounded-full flex items-center justify-center shadow-xs">
+                {wishlistCount}
+              </span>
+            )}
           </Link>
 
           {/* User Account / Login */}
@@ -101,10 +119,10 @@ export default function Navbar() {
               <button
                 type="button"
                 onClick={() => setDropdownOpen(!dropdownOpen)}
-                className="flex items-center gap-1.5 text-xs font-bold text-[#065f46] bg-[#f0fdf4] border border-[#bbf7d0] hover:bg-[#dcfce7] px-3.5 py-1.5 rounded-xl transition cursor-pointer"
+                className="flex items-center gap-1.5 text-xs font-bold text-[#065f46] bg-[#f0fdf4] border border-[#bbf7d0] hover:bg-[#dcfce7] px-3 py-1.5 rounded-xl transition cursor-pointer"
               >
                 <User className="w-3.5 h-3.5 text-[#16a34a]" />
-                <span className="max-w-25 truncate">{customer.name || customer.phone}</span>
+                <span className="max-w-20 sm:max-w-25 truncate">{customer.name || customer.phone}</span>
               </button>
 
               {dropdownOpen && (
@@ -113,6 +131,13 @@ export default function Navbar() {
                     <p className="text-xs font-black text-[#0f172a] truncate">{customer.name || "My Account"}</p>
                     <p className="text-[10px] text-[#64748b] font-semibold">{customer.phone}</p>
                   </div>
+                  <Link
+                    href="/wishlist"
+                    onClick={() => setDropdownOpen(false)}
+                    className="flex items-center gap-2 p-2 text-xs font-bold text-gray-700 hover:bg-red-50 rounded-lg"
+                  >
+                    <Heart className="w-3.5 h-3.5 text-red-500" /> My Wishlist ({wishlistCount})
+                  </Link>
                   <Link
                     href="/track-order"
                     onClick={() => setDropdownOpen(false)}
