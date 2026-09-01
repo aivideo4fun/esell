@@ -75,9 +75,12 @@ export async function POST(req: Request) {
         discountAmount: Math.round(discountAmount),
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error ? error.message : "Failed to apply coupon";
+
     return NextResponse.json(
-      { success: false, error: error?.message || "Failed to apply coupon" },
+      { success: false, error: message },
       { status: 500 }
     );
   }

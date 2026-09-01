@@ -1,8 +1,21 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { ShoppingBag, Search, ShieldCheck, User, LogOut, Heart } from "lucide-react";
+import { 
+  ShoppingBag, 
+  Search, 
+  ShieldCheck, 
+  User, 
+  LogOut, 
+  Heart,
+  Package,
+  Truck,
+  MapPin,
+  TicketPercent,
+  Bell,
+  HelpCircle
+} from "lucide-react";
 import { useCart } from "@/hooks/useCart";
 import { useWishlist } from "@/hooks/useWishlist";
 
@@ -22,6 +35,18 @@ export default function Navbar() {
 
   const [customer, setCustomer] = useState<CustomerUser | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicked outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   useEffect(() => {
     const checkCustomerAuth = async () => {
@@ -61,6 +86,18 @@ export default function Navbar() {
     "DIRECT DISPATCH",
   ];
 
+  // Full Customer Portal Menu Structure
+  const customerMenuItems = [
+    { label: "My Profile", href: "/account", icon: User },
+    { label: "My Orders", href: "/orders", icon: Package },
+    { label: "Track Order", href: "/orders/track", icon: Truck },
+    { label: "Wishlist", href: "/wishlist", icon: Heart, badge: wishlistCount },
+    { label: "Saved Addresses", href: "/account/addresses", icon: MapPin },
+    { label: "Coupons", href: "/account/coupons", icon: TicketPercent },
+    { label: "Notifications", href: "/account/notifications", icon: Bell },
+    { label: "Help & Support", href: "/contact", icon: HelpCircle },
+  ];
+
   return (
     <header className="sticky top-0 z-40 bg-white border-b border-gray-100 shadow-sm">
       {/* 1. TOP MAIN NAVIGATION BAR */}
@@ -93,7 +130,7 @@ export default function Navbar() {
             Catalog
           </Link>
           <Link
-            href="/track-order"
+            href="/orders/track"
             className="text-xs font-bold text-[#64748b] hover:text-[#065f46] transition hidden sm:flex items-center gap-1.5"
           >
             <ShieldCheck className="w-4 h-4 text-[#16a34a]" /> Track Order
@@ -113,45 +150,61 @@ export default function Navbar() {
             )}
           </Link>
 
-          {/* User Account / Login */}
+          {/* User Account / Login Dropdown */}
           {customer ? (
-            <div className="relative">
+            <div className="relative" ref={dropdownRef}>
               <button
                 type="button"
                 onClick={() => setDropdownOpen(!dropdownOpen)}
                 className="flex items-center gap-1.5 text-xs font-bold text-[#065f46] bg-[#f0fdf4] border border-[#bbf7d0] hover:bg-[#dcfce7] px-3 py-1.5 rounded-xl transition cursor-pointer"
               >
                 <User className="w-3.5 h-3.5 text-[#16a34a]" />
-                <span className="max-w-20 sm:max-w-25 truncate">{customer.name || customer.phone}</span>
+                <span className="max-w-20 sm:max-w-28 truncate">{customer.name || customer.phone}</span>
               </button>
 
               {dropdownOpen && (
-                <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-2xl shadow-xl p-2 space-y-1 z-50">
-                  <div className="p-2 border-b border-gray-100">
-                    <p className="text-xs font-black text-[#0f172a] truncate">{customer.name || "My Account"}</p>
-                    <p className="text-[10px] text-[#64748b] font-semibold">{customer.phone}</p>
+                <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-2xl shadow-xl p-2 z-50 text-xs animate-in fade-in slide-in-from-top-2 duration-150">
+                  {/* Account Header */}
+                  <div className="p-2.5 border-b border-gray-100">
+                    <p className="font-black text-[#0f172a] truncate">{customer.name || "CatchBuddy Customer"}</p>
+                    <p className="text-[11px] text-[#64748b] font-semibold truncate">{customer.phone}</p>
                   </div>
-                  <Link
-                    href="/wishlist"
-                    onClick={() => setDropdownOpen(false)}
-                    className="flex items-center gap-2 p-2 text-xs font-bold text-gray-700 hover:bg-red-50 rounded-lg"
-                  >
-                    <Heart className="w-3.5 h-3.5 text-red-500" /> My Wishlist ({wishlistCount})
-                  </Link>
-                  <Link
-                    href="/track-order"
-                    onClick={() => setDropdownOpen(false)}
-                    className="flex items-center gap-2 p-2 text-xs font-bold text-gray-700 hover:bg-[#f0fdf4] rounded-lg"
-                  >
-                    <ShieldCheck className="w-3.5 h-3.5 text-[#16a34a]" /> My Orders
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={handleLogout}
-                    className="w-full flex items-center gap-2 p-2 text-xs font-bold text-red-600 hover:bg-red-50 rounded-lg text-left cursor-pointer"
-                  >
-                    <LogOut className="w-3.5 h-3.5" /> Logout
-                  </button>
+
+                  {/* Customer Portal Items */}
+                  <div className="py-1 space-y-0.5">
+                    {customerMenuItems.map((item) => {
+                      const Icon = item.icon;
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          onClick={() => setDropdownOpen(false)}
+                          className="flex items-center justify-between px-3 py-2 text-gray-700 hover:bg-[#f0fdf4] hover:text-[#065f46] rounded-xl font-bold transition"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <Icon className="w-3.5 h-3.5 text-slate-500" />
+                            <span>{item.label}</span>
+                          </div>
+                          {item.badge && item.badge > 0 ? (
+                            <span className="bg-red-500 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black">
+                              {item.badge}
+                            </span>
+                          ) : null}
+                        </Link>
+                      );
+                    })}
+                  </div>
+
+                  {/* Logout Button */}
+                  <div className="border-t border-gray-100 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50 rounded-xl text-left cursor-pointer transition"
+                    >
+                      <LogOut className="w-3.5 h-3.5" /> Logout Session
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

@@ -1,51 +1,39 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 
-export async function POST(req: Request) {
+export async function GET() {
   try {
-    const body = await req.json();
-    const { fullName, phone, email, address, city, state, pincode, items, totalAmount } = body;
+    const cookieStore = await cookies();
+    const customerId = cookieStore.get("customer_id")?.value;
 
-    // 1. Validate required fields
-    if (!fullName || !phone || !address || !city || !pincode || !items || items.length === 0) {
-      return NextResponse.json(
-        { error: "Please provide all required delivery details and at least one item." },
-        { status: 400 }
-      );
+    let whereClause = {};
+    if (customerId) {
+      whereClause = { userId: customerId };
     }
 
-    // 2. Order ID generation (e.g. CB-849201)
-    const orderId = `CB-${Math.floor(100000 + Math.random() * 900000)}`;
-
-    const orderSummary = {
-      orderId,
-      customer: fullName,
-      phone,
-      email: email || "N/A",
-      deliveryAddress: `${address}, ${city}, ${state} - ${pincode}`,
-      totalAmount,
-      itemsCount: items.length,
-      paymentStatus: "PAID_PREPAID",
-      supplierStatus: "PENDING_BAAPSTORE_MANUAL_ENTRY",
-      createdAt: new Date().toISOString(),
-    };
-
-    console.log("New CatchBuddy Prepaid Order Received:", orderSummary);
-
-    // 3. Return success response
-    return NextResponse.json(
-      {
-        success: true,
-        message: "Order placed successfully with 100% Prepaid Protection.",
-        orderId,
-        data: orderSummary,
+    const orders = await prisma.order.findMany({
+      where: whereClause,
+      include: {
+        items: {
+          include: {
+            product: {
+              select: {
+                title: true,
+                slug: true,
+                images: true,
+              },
+            },
+          },
+        },
       },
-      { status: 201 }
-    );
-  } catch (error) {
-    console.error("Order API Error:", error);
+      orderBy: { createdAt: "desc" },
+    });
+
+    return NextResponse.json({ success: true, orders });
+  } catch (error: any) {
     return NextResponse.json(
-      { error: "Internal Server Error. Could not process order." },
+      { success: false, error: error?.message || "Failed to fetch customer orders" },
       { status: 500 }
     );
   }
