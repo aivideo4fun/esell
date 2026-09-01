@@ -28,10 +28,10 @@ export async function GET() {
     const totalOrdersCount = orders.length;
     const averageOrderValue = paidOrders.length > 0 ? Math.round(totalRevenue / paidOrders.length) : 0;
 
-    // 1. Top Selling Products
+    // 1. Top Selling Products (using o.items)
     const productSalesMap: { [key: string]: { title: string; count: number; revenue: number } } = {};
     orders.forEach((o) => {
-      o.orderItems.forEach((item) => {
+      o.items?.forEach((item) => {
         const pId = item.productId;
         const pTitle = item.product?.title || "Unknown Product";
         if (!productSalesMap[pId]) {
@@ -46,10 +46,10 @@ export async function GET() {
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 5);
 
-    // 2. Category Performance
+    // 2. Category Performance (using o.items)
     const categoryMap: { [key: string]: number } = {};
     orders.forEach((o) => {
-      o.orderItems.forEach((item) => {
+      o.items?.forEach((item) => {
         const catName = item.product?.category?.name || "General";
         categoryMap[catName] = (categoryMap[catName] || 0) + item.price * item.quantity;
       });
