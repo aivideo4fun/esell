@@ -5,7 +5,7 @@ export async function GET() {
   try {
     const orders = await prisma.order.findMany({
       include: {
-        orderItems: {
+        items: {
           include: {
             product: {
               select: {
