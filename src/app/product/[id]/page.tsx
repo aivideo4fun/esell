@@ -14,7 +14,9 @@ import {
   Loader2, 
   Share2, 
   Check,
-  Heart
+  Heart,
+  XCircle,
+  CheckCircle2
 } from "lucide-react";
 import { useCart } from "@/hooks/useCart";
 import { useWishlist } from "@/hooks/useWishlist";
@@ -35,6 +37,8 @@ interface Product {
   stock: number;
   badge?: string;
   images: ProductImage[];
+  sizes?: string[];       // Future clothes support (e.g. ["S", "M", "L", "XL", "XXL"])
+  colors?: string[];      // Future color support (e.g. ["Black", "White", "Navy Blue", "Olive"])
 }
 
 export default function ProductDetailPage() {
@@ -48,6 +52,10 @@ export default function ProductDetailPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
+
+  // Variant selections (Size & Color)
+  const [selectedSize, setSelectedSize] = useState<string>("");
+  const [selectedColor, setSelectedColor] = useState<string>("");
 
   const rawId = params?.id;
   const currentSlugOrId = Array.isArray(rawId) ? rawId[0] : (rawId as string);
@@ -68,6 +76,13 @@ export default function ProductDetailPage() {
 
         if (found) {
           setProduct(found);
+          // Default first size & color if available
+          if (found.sizes && found.sizes.length > 0) {
+            setSelectedSize(found.sizes[0]);
+          }
+          if (found.colors && found.colors.length > 0) {
+            setSelectedColor(found.colors[0]);
+          }
         } else {
           setError("Product not found");
         }
@@ -133,11 +148,21 @@ export default function ProductDetailPage() {
   const originalPrice = product.originalPrice;
   const discount = Math.round(((originalPrice - sellingPrice) / originalPrice) * 100);
   const isWishlisted = isInWishlist(product.id);
+  const isOutOfStock = (product.stock ?? 1) <= 0;
+
+  // Cart item title with size and color details if selected
+  const getFullItemTitle = () => {
+    let extra = [];
+    if (selectedSize) extra.push(`Size: ${selectedSize}`);
+    if (selectedColor) extra.push(`Color: ${selectedColor}`);
+    return extra.length > 0 ? `${product.title} (${extra.join(", ")})` : product.title;
+  };
 
   const handleAddToCart = () => {
+    if (isOutOfStock) return;
     cart.addItem({
       id: product.id,
-      title: product.title,
+      title: getFullItemTitle(),
       price: product.price,
       image: primaryImg,
       quantity: qty,
@@ -148,9 +173,10 @@ export default function ProductDetailPage() {
   };
 
   const handleBuyNow = () => {
+    if (isOutOfStock) return;
     cart.addItem({
       id: product.id,
-      title: product.title,
+      title: getFullItemTitle(),
       price: product.price,
       image: primaryImg,
       quantity: qty,
@@ -174,7 +200,6 @@ export default function ProductDetailPage() {
 
           {/* Action Buttons: Wishlist + Share */}
           <div className="flex items-center gap-2">
-            {/* Wishlist Heart Button */}
             <button
               onClick={() =>
                 toggleWishlist({
@@ -186,7 +211,7 @@ export default function ProductDetailPage() {
                   slug: product.slug,
                 })
               }
-              className={`p-2 rounded-xl border transition cursor-pointer flex items-center gap-1 text-xs font-bold ${
+              className={`p-2 rounded-xl border transition cursor-pointer flex items-center gap-1.5 text-xs font-bold ${
                 isWishlisted
                   ? "bg-red-50 border-red-200 text-red-600"
                   : "bg-gray-100 border-gray-200 text-gray-700 hover:bg-gray-200"
@@ -201,7 +226,6 @@ export default function ProductDetailPage() {
               <span className="hidden sm:inline">{isWishlisted ? "Saved" : "Wishlist"}</span>
             </button>
 
-            {/* Single Share Button */}
             <button
               onClick={handleShare}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-gray-100 hover:bg-gray-200 text-[#0f172a] text-xs font-bold rounded-xl transition cursor-pointer shadow-xs active:scale-95 border border-gray-200"
@@ -223,26 +247,42 @@ export default function ProductDetailPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
+          
           {/* Product Image */}
           <div className="lg:col-span-6 space-y-4">
             <div className="relative aspect-square w-full rounded-3xl bg-[#f8fafc] border border-gray-200 overflow-hidden flex items-center justify-center p-6">
               <img
                 src={primaryImg}
                 alt={product.title}
-                className="object-contain w-full h-full"
+                className={`object-contain w-full h-full transition duration-300 ${
+                  isOutOfStock ? "grayscale opacity-75" : ""
+                }`}
               />
-              {discount > 0 && (
+              
+              {/* Badges */}
+              {isOutOfStock ? (
+                <span className="absolute top-4 left-4 bg-red-600 text-white text-xs font-black px-3.5 py-1.5 rounded-xl uppercase tracking-wider shadow-md flex items-center gap-1">
+                  <XCircle className="w-3.5 h-3.5" /> Out of Stock
+                </span>
+              ) : discount > 0 ? (
                 <span className="absolute top-4 left-4 bg-[#16a34a] text-white text-xs font-black px-3 py-1 rounded-lg">
                   {discount}% OFF
                 </span>
-              )}
+              ) : null}
             </div>
           </div>
 
           {/* Product Info & Actions */}
           <div className="lg:col-span-6 space-y-6">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#f0fdf4] border border-[#bbf7d0] text-[#16a34a] text-xs font-bold">
-              <Zap className="w-3.5 h-3.5 fill-[#16a34a]" /> Direct Verified Dispatch
+            <div className="flex items-center gap-2">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#f0fdf4] border border-[#bbf7d0] text-[#16a34a] text-xs font-bold">
+                <Zap className="w-3.5 h-3.5 fill-[#16a34a]" /> Direct Verified Dispatch
+              </div>
+              {product.stock > 0 && product.stock <= 5 && (
+                <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+                  Only {product.stock} left in stock!
+                </span>
+              )}
             </div>
 
             <h1 className="text-2xl sm:text-4xl font-black text-[#0f172a] leading-tight capitalize">
@@ -263,6 +303,59 @@ export default function ProductDetailPage() {
               </span>
             </div>
 
+            {/* Clothes: Size Selection Option */}
+            {product.sizes && product.sizes.length > 0 && (
+              <div className="space-y-2 pt-1 border-t border-gray-100">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-[#0f172a] uppercase tracking-wider">
+                    Select Size: <span className="text-[#16a34a]">{selectedSize}</span>
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {product.sizes.map((sz) => (
+                    <button
+                      key={sz}
+                      type="button"
+                      onClick={() => setSelectedSize(sz)}
+                      className={`min-w-11 py-2 px-3.5 rounded-xl text-xs font-black transition border-2 cursor-pointer ${
+                        selectedSize === sz
+                          ? "bg-black text-white border-black shadow-xs"
+                          : "bg-white text-gray-800 border-gray-200 hover:border-gray-400"
+                      }`}
+                    >
+                      {sz}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Clothes & Goods: Color Selection Option */}
+            {product.colors && product.colors.length > 0 && (
+              <div className="space-y-2 pt-1 border-t border-gray-100">
+                <span className="text-xs font-black text-[#0f172a] uppercase tracking-wider block">
+                  Select Color: <span className="text-[#16a34a]">{selectedColor}</span>
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  {product.colors.map((clr) => (
+                    <button
+                      key={clr}
+                      type="button"
+                      onClick={() => setSelectedColor(clr)}
+                      className={`py-1.5 px-3 rounded-xl text-xs font-bold transition border-2 flex items-center gap-1.5 cursor-pointer ${
+                        selectedColor === clr
+                          ? "bg-[#f0fdf4] text-[#065f46] border-[#16a34a]"
+                          : "bg-white text-gray-700 border-gray-200 hover:border-gray-400"
+                      }`}
+                    >
+                      {selectedColor === clr && <CheckCircle2 className="w-3.5 h-3.5 text-[#16a34a]" />}
+                      {clr}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Offer Banner */}
             <div className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-[#f0fdf4] border border-[#bbf7d0] text-[#065f46]">
               <Sparkles className="w-4 h-4 text-[#16a34a] shrink-0 mt-0.5" />
@@ -272,43 +365,55 @@ export default function ProductDetailPage() {
             </div>
 
             {/* Quantity Selector */}
-            <div className="flex items-center gap-3 pt-2">
-              <span className="text-xs font-black text-[#64748b] uppercase tracking-wide">Quantity:</span>
-              <div className="flex items-center border border-gray-200 rounded-xl bg-gray-50">
-                <button
-                  type="button"
-                  onClick={() => setQty((q) => Math.max(1, q - 1))}
-                  className="px-3.5 py-1.5 text-sm font-black text-[#0f172a] hover:bg-gray-200 rounded-l-xl transition cursor-pointer"
-                >
-                  -
-                </button>
-                <span className="px-4 text-xs font-black text-[#0f172a]">{qty}</span>
-                <button
-                  type="button"
-                  onClick={() => setQty((q) => q + 1)}
-                  className="px-3.5 py-1.5 text-sm font-black text-[#0f172a] hover:bg-gray-200 rounded-r-xl transition cursor-pointer"
-                >
-                  +
-                </button>
+            {!isOutOfStock && (
+              <div className="flex items-center gap-3 pt-2">
+                <span className="text-xs font-black text-[#64748b] uppercase tracking-wide">Quantity:</span>
+                <div className="flex items-center border border-gray-200 rounded-xl bg-gray-50">
+                  <button
+                    type="button"
+                    onClick={() => setQty((q) => Math.max(1, q - 1))}
+                    className="px-3.5 py-1.5 text-sm font-black text-[#0f172a] hover:bg-gray-200 rounded-l-xl transition cursor-pointer"
+                  >
+                    -
+                  </button>
+                  <span className="px-4 text-xs font-black text-[#0f172a]">{qty}</span>
+                  <button
+                    type="button"
+                    onClick={() => setQty((q) => (product.stock ? Math.min(product.stock, q + 1) : q + 1))}
+                    className="px-3.5 py-1.5 text-sm font-black text-[#0f172a] hover:bg-gray-200 rounded-r-xl transition cursor-pointer"
+                  >
+                    +
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Action Buttons */}
+            {/* Action Buttons (Disabled when Out of Stock) */}
             <div className="flex flex-col sm:flex-row gap-3 pt-2">
               <button
                 type="button"
+                disabled={isOutOfStock}
                 onClick={handleAddToCart}
-                className="flex-1 inline-flex items-center justify-center gap-2 bg-white border-2 border-gray-900 hover:border-[#16a34a] hover:text-[#16a34a] text-[#0f172a] font-black py-3.5 px-6 rounded-2xl transition cursor-pointer shadow-xs"
+                className={`flex-1 inline-flex items-center justify-center gap-2 font-black py-3.5 px-6 rounded-2xl transition shadow-xs ${
+                  isOutOfStock
+                    ? "bg-gray-100 text-gray-400 border-2 border-gray-200 cursor-not-allowed"
+                    : "bg-white border-2 border-gray-900 hover:border-[#16a34a] hover:text-[#16a34a] text-[#0f172a] cursor-pointer"
+                }`}
               >
-                <ShoppingBag className="w-4 h-4" /> Add to Cart
+                <ShoppingBag className="w-4 h-4" /> {isOutOfStock ? "Sold Out" : "Add to Cart"}
               </button>
 
               <button
                 type="button"
+                disabled={isOutOfStock}
                 onClick={handleBuyNow}
-                className="flex-1 inline-flex items-center justify-center gap-2 bg-[#065f46] hover:bg-[#044e39] text-white font-black py-3.5 px-6 rounded-2xl transition shadow-lg shadow-emerald-950/20 active:scale-95 cursor-pointer"
+                className={`flex-1 inline-flex items-center justify-center gap-2 font-black py-3.5 px-6 rounded-2xl transition shadow-lg ${
+                  isOutOfStock
+                    ? "bg-gray-300 text-gray-500 cursor-not-allowed shadow-none"
+                    : "bg-[#065f46] hover:bg-[#044e39] text-white shadow-emerald-950/20 active:scale-95 cursor-pointer"
+                }`}
               >
-                <Zap className="w-4 h-4 fill-white" /> Buy Now (Instant Pay)
+                <Zap className="w-4 h-4 fill-white" /> {isOutOfStock ? "Currently Unavailable" : "Buy Now (Instant Pay)"}
               </button>
             </div>
 
@@ -327,6 +432,7 @@ export default function ProductDetailPage() {
                 <p className="text-[11px] font-bold text-[#0f172a]">5-Day Replacement</p>
               </div>
             </div>
+
           </div>
         </div>
       </div>

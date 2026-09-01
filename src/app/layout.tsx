@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import Navbar from "@/components/navbar/Navbar";
-import Footer from "@/components/footer/Footer";
-import CartDrawer from "@/components/cart/CartDrawer";
+import AppWrapper from "@/components/layout/AppWrapper";
 import Script from "next/script";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -21,10 +19,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.className} min-h-screen flex flex-col bg-[#fafafa]`}>
-        <Navbar />
-        <main className="flex-1">{children}</main>
-        <Footer />
-        <CartDrawer />
+        <AppWrapper>{children}</AppWrapper>
         
         {/* Razorpay Standard Checkout SDK */}
         <Script
