@@ -28,7 +28,7 @@ export async function GET() {
     const totalOrdersCount = orders.length;
     const averageOrderValue = paidOrders.length > 0 ? Math.round(totalRevenue / paidOrders.length) : 0;
 
-    // 1. Top Selling Products (using o.items)
+    // 1. Top Selling Products
     const productSalesMap: { [key: string]: { title: string; count: number; revenue: number } } = {};
     orders.forEach((o) => {
       o.items?.forEach((item) => {
@@ -44,9 +44,9 @@ export async function GET() {
 
     const topProducts = Object.values(productSalesMap)
       .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 5);
+      .slice(0, 10);
 
-    // 2. Category Performance (using o.items)
+    // 2. Category Performance
     const categoryMap: { [key: string]: number } = {};
     orders.forEach((o) => {
       o.items?.forEach((item) => {
@@ -71,9 +71,10 @@ export async function GET() {
         categoryBreakdown,
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to compile analytics";
     return NextResponse.json(
-      { success: false, error: error?.message || "Failed to compile analytics" },
+      { success: false, error: message },
       { status: 500 }
     );
   }
