@@ -15,6 +15,8 @@ import {
   Download,
   Upload,
   Check,
+  CheckSquare,
+  Square,
 } from "lucide-react";
 
 interface ProductImage {
@@ -53,11 +55,17 @@ export default function AdminProductsPage() {
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCsvUploading, setIsCsvUploading] = useState(false);
+  const [isExcelUploading, setIsExcelUploading] = useState(false);
   const [showModal, setShowModal] = useState(false);
 
-  const csvInputRef = useRef<HTMLInputElement>(null);
+  // Bulk Selection State
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
-  // Form State (Only Light Image URLs Links)
+  const csvInputRef = useRef<HTMLInputElement>(null);
+  const excelInputRef = useRef<HTMLInputElement>(null);
+
+  // Form State
   const [imageUrls, setImageUrls] = useState<string[]>([""]);
   const [selectedSizes, setSelectedSizes] = useState<string[]>(["M", "L"]);
   const [formData, setFormData] = useState({
@@ -120,6 +128,54 @@ export default function AdminProductsPage() {
     void fetchCategories();
     void fetchProducts();
   }, [fetchCategories, fetchProducts]);
+
+  // Bulk Selection Handlers
+  const handleSelectAll = () => {
+    if (selectedIds.length === products.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(products.map((p) => p.id));
+    }
+  };
+
+  const toggleSelectOne = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    if (
+      !confirm(
+        `Kya aap sach me select kiye gaye ${selectedIds.length} products ko delete karna chahte hain?`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setIsBulkDeleting(true);
+      const res = await fetch("/api/admin/products/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: selectedIds }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setProducts((prev) => prev.filter((p) => !selectedIds.includes(p.id)));
+        setSelectedIds([]);
+        alert(data.message || "Selected products deleted!");
+      } else {
+        alert("Bulk delete failed: " + (data.error || "Unknown error"));
+      }
+    } catch {
+      alert("Network error during bulk delete");
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
 
   // Handle Multi-Link Inputs
   const handleImageUrlChange = (index: number, value: string) => {
@@ -189,7 +245,7 @@ export default function AdminProductsPage() {
     }
   };
 
-  // Delete Product
+  // Delete Single Product
   const handleDelete = async (id: string) => {
     if (!confirm("Kya aap is product ko delete karna chahte hain?")) return;
     try {
@@ -197,6 +253,7 @@ export default function AdminProductsPage() {
       const data = await res.json();
       if (data.success) {
         setProducts((prev) => prev.filter((p) => p.id !== id));
+        setSelectedIds((prev) => prev.filter((itemId) => itemId !== id));
       }
     } catch {
       alert("Delete failed");
@@ -239,12 +296,10 @@ export default function AdminProductsPage() {
           return;
         }
 
-        // CSV parsing
         const headers = lines[0].split(",").map((h) => h.trim().replace(/^["']|["']$/g, ""));
         const parsedProducts = [];
 
         for (let i = 1; i < lines.length; i++) {
-          // Regex regex to split by commas outside quotes
           const row = lines[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || lines[i].split(",");
           const cleanRow = row.map((val) => val.trim().replace(/^["']|["']$/g, ""));
 
@@ -264,7 +319,6 @@ export default function AdminProductsPage() {
           return;
         }
 
-        // Send to backend
         const res = await fetch("/api/admin/products/bulk", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -290,16 +344,52 @@ export default function AdminProductsPage() {
     reader.readAsText(file);
   };
 
+  // 3. Upload Excel (.xlsx / .xls) Multi-Sheet Bulk Insert
+  const handleExcelFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith(".xlsx") && !file.name.endsWith(".xls")) {
+      alert("Kripya ek valid Excel file (.xlsx ya .xls) upload karein!");
+      return;
+    }
+
+    const formDataUpload = new FormData();
+    formDataUpload.append("file", file);
+
+    try {
+      setIsExcelUploading(true);
+      const res = await fetch("/api/admin/products/bulk-excel", {
+        method: "POST",
+        body: formDataUpload,
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        alert(data.message || "Excel products and images imported successfully!");
+        void fetchProducts();
+      } else {
+        alert("Excel Import Error: " + (data.error || "Upload failed"));
+      }
+    } catch {
+      alert("Network error while uploading Excel file. Please try again.");
+    } finally {
+      setIsExcelUploading(false);
+      if (excelInputRef.current) excelInputRef.current.value = "";
+    }
+  };
+
   const isFashionCategory = formData.categorySlug.toLowerCase().includes("fashion");
+  const isAllSelected = products.length > 0 && selectedIds.length === products.length;
 
   return (
-    <div className="space-y-8 max-w-6xl mx-auto py-4">
+    <div className="space-y-6 max-w-6xl mx-auto py-4">
       {/* Top Header & Bulk Actions */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-950">Product Inventory Manager</h1>
           <p className="text-xs text-slate-500 font-semibold mt-1">
-            Single form ya bulk CSV upload se instant products live karein
+            Single form, CSV, Excel (.xlsx) bulk upload aur multi-select deletion controls
           </p>
         </div>
 
@@ -316,11 +406,11 @@ export default function AdminProductsPage() {
           {/* Bulk CSV Upload */}
           <button
             onClick={() => csvInputRef.current?.click()}
-            disabled={isCsvUploading}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-xs disabled:opacity-50"
+            disabled={isCsvUploading || isExcelUploading}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-xs disabled:opacity-50"
           >
             {isCsvUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-            {isCsvUploading ? "Importing..." : "Bulk CSV Upload"}
+            {isCsvUploading ? "Importing CSV..." : "CSV Upload"}
           </button>
           <input
             ref={csvInputRef}
@@ -330,15 +420,74 @@ export default function AdminProductsPage() {
             className="hidden"
           />
 
+          {/* Bulk Excel Upload (.xlsx) */}
+          <button
+            onClick={() => excelInputRef.current?.click()}
+            disabled={isExcelUploading || isCsvUploading}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-black rounded-xl transition cursor-pointer shadow-xs disabled:opacity-50"
+          >
+            {isExcelUploading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Importing Excel Data...</span>
+              </>
+            ) : (
+              <>
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>Bulk Upload Excel (.xlsx)</span>
+              </>
+            )}
+          </button>
+          <input
+            ref={excelInputRef}
+            type="file"
+            accept=".xlsx, .xls"
+            onChange={handleExcelFileUpload}
+            className="hidden"
+          />
+
           {/* Single Add Product */}
           <button
             onClick={() => setShowModal(true)}
-            className="inline-flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-xs"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-xs"
           >
             <Plus className="w-4 h-4" /> Add Product
           </button>
         </div>
       </div>
+
+      {/* BULK ACTION BAR (Only visible when items are selected) */}
+      {selectedIds.length > 0 && (
+        <div className="bg-rose-50 border border-rose-200 p-4 rounded-2xl flex items-center justify-between shadow-xs animate-in fade-in duration-200">
+          <div className="flex items-center gap-2 text-xs font-black text-rose-950">
+            <span className="w-6 h-6 rounded-full bg-rose-600 text-white flex items-center justify-center text-[11px]">
+              {selectedIds.length}
+            </span>
+            <span>products selected for action</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelectedIds([])}
+              className="px-3.5 py-1.5 bg-white border border-rose-200 hover:bg-rose-100 text-rose-800 text-xs font-bold rounded-xl transition cursor-pointer"
+            >
+              Deselect All
+            </button>
+            <button
+              onClick={handleBulkDelete}
+              disabled={isBulkDeleting}
+              className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl transition shadow-xs cursor-pointer disabled:opacity-50"
+            >
+              {isBulkDeleting ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="w-3.5 h-3.5" />
+              )}
+              {isBulkDeleting ? "Deleting Products..." : `Delete Selected (${selectedIds.length})`}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Add Single Product Modal Form */}
       {showModal && (
@@ -548,12 +697,31 @@ export default function AdminProductsPage() {
           <div className="py-16 text-center text-slate-500 space-y-2">
             <AlertCircle className="w-8 h-8 text-slate-300 mx-auto" />
             <p className="text-xs font-black text-slate-900">Abhi koi products nahi hain.</p>
-            <p className="text-xs text-slate-500 font-medium">Bulk CSV upload ya upar button se product add karein.</p>
+            <p className="text-xs text-slate-500 font-medium">Bulk Excel / CSV upload ya upar button se product add karein.</p>
           </div>
         ) : (
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-black uppercase tracking-wider">
               <tr>
+                {/* SELECT ALL CHECKBOX */}
+                <th className="p-4 w-12 text-center">
+                  <button
+                    type="button"
+                    onClick={handleSelectAll}
+                    className="text-slate-400 hover:text-slate-800 transition cursor-pointer"
+                    title={isAllSelected ? "Deselect All" : "Select All"}
+                  >
+                    {isAllSelected ? (
+                      <CheckSquare className="w-4 h-4 text-emerald-600" />
+                    ) : selectedIds.length > 0 ? (
+                      <div className="w-4 h-4 bg-emerald-600 rounded flex items-center justify-center text-white text-[10px] font-black">
+                        -
+                      </div>
+                    ) : (
+                      <Square className="w-4 h-4" />
+                    )}
+                  </button>
+                </th>
                 <th className="p-4">Product</th>
                 <th className="p-4">Category</th>
                 <th className="p-4">Badge</th>
@@ -562,46 +730,78 @@ export default function AdminProductsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-bold text-slate-900">
-              {products.map((item) => (
-                <tr key={item.id} className="hover:bg-slate-50/60 transition">
-                  <td className="p-4 flex items-center gap-3">
-                    <img
-                      src={item.images?.[0]?.url || "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=500&q=80"}
-                      alt=""
-                      className="w-12 h-12 rounded-xl object-cover border border-slate-200 shrink-0"
-                    />
-                    <div>
-                      <span className="font-black text-slate-950 block text-sm">{item.title}</span>
-                      <span className="text-[10px] text-slate-400 font-normal">
-                        {item.images?.length || 1} photo(s) • /{item.slug}
+              {products.map((item) => {
+                const isSelected = selectedIds.includes(item.id);
+                return (
+                  <tr
+                    key={item.id}
+                    className={`transition ${
+                      isSelected ? "bg-emerald-50/50" : "hover:bg-slate-50/60"
+                    }`}
+                  >
+                    {/* ROW CHECKBOX */}
+                    <td className="p-4 text-center">
+                      <button
+                        type="button"
+                        onClick={() => toggleSelectOne(item.id)}
+                        className="text-slate-400 hover:text-slate-700 transition cursor-pointer"
+                      >
+                        {isSelected ? (
+                          <CheckSquare className="w-4 h-4 text-emerald-600" />
+                        ) : (
+                          <Square className="w-4 h-4 text-slate-300" />
+                        )}
+                      </button>
+                    </td>
+
+                    <td className="p-4 flex items-center gap-3">
+                      <img
+                        src={
+                          item.images?.[0]?.url ||
+                          "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=500&q=80"
+                        }
+                        alt=""
+                        className="w-12 h-12 rounded-xl object-cover border border-slate-200 shrink-0"
+                      />
+                      <div>
+                        <span className="font-black text-slate-950 block text-sm">{item.title}</span>
+                        <span className="text-[10px] text-slate-400 font-normal">
+                          {item.images?.length || 1} photo(s) • /{item.slug}
+                        </span>
+                      </div>
+                    </td>
+
+                    <td className="p-4 uppercase font-black text-xs text-blue-600">
+                      {item.category?.name || "General"}
+                    </td>
+
+                    <td className="p-4">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-[10px] font-black">
+                        <Tag className="w-3 h-3" /> {item.badge}
                       </span>
-                    </div>
-                  </td>
-                  <td className="p-4 uppercase font-black text-xs text-blue-600">
-                    {item.category?.name || "General"}
-                  </td>
-                  <td className="p-4">
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-[10px] font-black">
-                      <Tag className="w-3 h-3" /> {item.badge}
-                    </span>
-                  </td>
-                  <td className="p-4">
-                    <span className="font-black text-slate-950 text-sm">₹{item.price}</span>
-                    {item.originalPrice && (
-                      <span className="text-slate-400 line-through ml-1.5 text-xs font-normal">₹{item.originalPrice}</span>
-                    )}
-                  </td>
-                  <td className="p-4 text-right">
-                    <button
-                      onClick={() => handleDelete(item.id)}
-                      className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                      title="Delete Product"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+
+                    <td className="p-4">
+                      <span className="font-black text-slate-950 text-sm">₹{item.price}</span>
+                      {item.originalPrice && (
+                        <span className="text-slate-400 line-through ml-1.5 text-xs font-normal">
+                          ₹{item.originalPrice}
+                        </span>
+                      )}
+                    </td>
+
+                    <td className="p-4 text-right">
+                      <button
+                        onClick={() => handleDelete(item.id)}
+                        className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                        title="Delete Product"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
