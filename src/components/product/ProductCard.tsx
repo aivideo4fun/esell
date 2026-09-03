@@ -2,7 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import { Star, ShoppingBag, Zap } from "lucide-react";
+import { Star, ShoppingBag, Zap, Ban } from "lucide-react";
 import { useCart } from "@/hooks/useCart";
 import { useRouter } from "next/navigation";
 
@@ -12,6 +12,7 @@ export interface CardProduct {
   price: number;
   originalPrice?: number;
   mrp?: number;
+  stock?: number;
   category?: string | { name?: string };
   image?: string;
   images?: Array<{ url: string } | string>;
@@ -22,6 +23,7 @@ export default function ProductCard({ product }: { product: CardProduct }) {
   const cart = useCart();
   const router = useRouter();
 
+  const isOutOfStock = (product.stock ?? 1) <= 0;
   const mrpVal = Number(product.originalPrice || product.mrp || 0);
   const priceVal = Number(product.price || 0);
   const discount = mrpVal > priceVal ? Math.round(((mrpVal - priceVal) / mrpVal) * 100) : 0;
@@ -39,6 +41,8 @@ export default function ProductCard({ product }: { product: CardProduct }) {
   const handleAddToCart = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (isOutOfStock) return;
+
     cart.addItem({
       id: product.id,
       title: product.title,
@@ -52,6 +56,8 @@ export default function ProductCard({ product }: { product: CardProduct }) {
   const handleBuyNow = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (isOutOfStock) return;
+
     cart.addItem({
       id: product.id,
       title: product.title,
@@ -63,7 +69,13 @@ export default function ProductCard({ product }: { product: CardProduct }) {
   };
 
   return (
-    <div className="group bg-white rounded-3xl border border-gray-200 hover:border-[#16a34a] p-4 transition-all duration-300 shadow-xs hover:shadow-xl flex flex-col justify-between">
+    <div
+      className={`group bg-white rounded-3xl border p-4 transition-all duration-300 shadow-xs flex flex-col justify-between ${
+        isOutOfStock
+          ? "border-red-200 opacity-80"
+          : "border-gray-200 hover:border-[#16a34a] hover:shadow-xl"
+      }`}
+    >
       <div>
         {/* Image Container with Badges */}
         <Link href={`/product/${product.slug || product.id}`}>
@@ -71,16 +83,24 @@ export default function ProductCard({ product }: { product: CardProduct }) {
             <img
               src={mainImage}
               alt={product.title}
-              className="object-contain w-full h-full group-hover:scale-105 transition duration-500"
+              className={`object-contain w-full h-full transition duration-500 ${
+                isOutOfStock ? "grayscale opacity-60" : "group-hover:scale-105"
+              }`}
             />
 
-            {/* Bestseller Badge */}
-            <span className="absolute top-2.5 left-2.5 bg-black text-white text-[10px] font-black px-2.5 py-0.5 rounded-md uppercase tracking-wider">
-              BESTSELLER
-            </span>
+            {/* Out of Stock vs Bestseller Badge */}
+            {isOutOfStock ? (
+              <span className="absolute top-2.5 left-2.5 bg-red-600 text-white text-[10px] font-black px-2.5 py-0.5 rounded-md uppercase tracking-wider shadow-sm">
+                OUT OF STOCK
+              </span>
+            ) : (
+              <span className="absolute top-2.5 left-2.5 bg-black text-white text-[10px] font-black px-2.5 py-0.5 rounded-md uppercase tracking-wider">
+                BESTSELLER
+              </span>
+            )}
 
             {/* Discount Badge */}
-            {discount > 0 && (
+            {!isOutOfStock && discount > 0 && (
               <span className="absolute top-2.5 right-2.5 bg-red-50 text-red-600 border border-red-200 text-[10px] font-black px-2 py-0.5 rounded-md">
                 {discount}% OFF
               </span>
@@ -121,21 +141,33 @@ export default function ProductCard({ product }: { product: CardProduct }) {
 
       {/* Quick Action Buttons */}
       <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
-        <button
-          type="button"
-          onClick={handleAddToCart}
-          className="flex-1 inline-flex items-center justify-center gap-1.5 bg-[#f0fdf4] border border-[#bbf7d0] hover:bg-[#dcfce7] text-[#065f46] text-xs font-black py-2.5 px-3 rounded-xl transition cursor-pointer"
-        >
-          <ShoppingBag className="w-3.5 h-3.5 text-[#16a34a]" /> Add
-        </button>
+        {isOutOfStock ? (
+          <button
+            disabled
+            type="button"
+            className="w-full inline-flex items-center justify-center gap-1.5 bg-gray-100 border border-gray-200 text-gray-400 text-xs font-black py-2.5 px-3 rounded-xl cursor-not-allowed uppercase tracking-wider"
+          >
+            <Ban className="w-3.5 h-3.5 text-gray-400" /> Out of Stock
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={handleAddToCart}
+              className="flex-1 inline-flex items-center justify-center gap-1.5 bg-[#f0fdf4] border border-[#bbf7d0] hover:bg-[#dcfce7] text-[#065f46] text-xs font-black py-2.5 px-3 rounded-xl transition cursor-pointer"
+            >
+              <ShoppingBag className="w-3.5 h-3.5 text-[#16a34a]" /> Add
+            </button>
 
-        <button
-          type="button"
-          onClick={handleBuyNow}
-          className="flex-1 inline-flex items-center justify-center gap-1.5 bg-[#065f46] hover:bg-[#044e39] text-white text-xs font-black py-2.5 px-3 rounded-xl transition shadow-md shadow-emerald-950/20 active:scale-95 cursor-pointer"
-        >
-          <Zap className="w-3.5 h-3.5 fill-white" /> Buy
-        </button>
+            <button
+              type="button"
+              onClick={handleBuyNow}
+              className="flex-1 inline-flex items-center justify-center gap-1.5 bg-[#065f46] hover:bg-[#044e39] text-white text-xs font-black py-2.5 px-3 rounded-xl transition shadow-md shadow-emerald-950/20 active:scale-95 cursor-pointer"
+            >
+              <Zap className="w-3.5 h-3.5 fill-white" /> Buy
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

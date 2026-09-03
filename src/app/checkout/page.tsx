@@ -132,6 +132,34 @@ export default function CheckoutPage() {
   const couponDiscount = appliedCoupon ? appliedCoupon.discountAmount : 0;
   const finalPayable = Math.max(0, cartSubtotal - prepaidDiscount - couponDiscount);
 
+  // AUTOMATED ABANDONED CART TRACKER
+  // Phone number 10 digits hote hi background me draft create/update karega
+  useEffect(() => {
+    const cleanPhone = formData.phone.trim().replace(/\D/g, "");
+    if (cleanPhone.length < 10 || items.length === 0) {
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        await fetch("/api/cart/track", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: formData.fullName || "Guest Customer",
+            phone: cleanPhone,
+            items: items,
+            totalAmount: finalPayable,
+          }),
+        });
+      } catch {
+        // Silent background tracking
+      }
+    }, 1200);
+
+    return () => clearTimeout(timer);
+  }, [formData.phone, formData.fullName, items, finalPayable]);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
@@ -441,6 +469,7 @@ export default function CheckoutPage() {
                   type="tel"
                   name="phone"
                   placeholder="10-digit mobile number"
+                  maxLength={10}
                   value={formData.phone}
                   onChange={handleInputChange}
                   className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl text-xs font-semibold text-[#0f172a] placeholder:text-[#64748b] focus:border-[#16a34a] focus:ring-1 focus:ring-[#16a34a] focus:outline-none"

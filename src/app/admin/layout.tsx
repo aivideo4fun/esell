@@ -27,6 +27,7 @@ import {
   FileText,
   Search,
   HelpCircle,
+  LayoutTemplate, // <-- Footer Manager Icon
   // Finance
   CreditCard,
   Receipt,
@@ -145,6 +146,7 @@ export default function AdminLayout({
         { label: "Banners & CMS", href: "/admin/banners", icon: ImageIcon },
         { label: "Blog", href: "/admin/blog", icon: BookOpen },
         { label: "Pages", href: "/admin/pages", icon: FileText },
+        { label: "Footer Manager", href: "/admin/footer", icon: LayoutTemplate }, // <-- Added Footer Manager
         { label: "SEO Manager", href: "/admin/seo", icon: Search },
         { label: "FAQ", href: "/admin/faq", icon: HelpCircle },
       ],

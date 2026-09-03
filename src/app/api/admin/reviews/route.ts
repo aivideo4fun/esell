@@ -1,86 +1,114 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { cookies } from "next/headers";
 
-// 1. GET: Fetch all customer reviews
-export async function GET() {
+export const dynamic = "force-dynamic";
+
+// 1. GET: Public Approved Reviews
+export async function GET(req: Request) {
   try {
+    const { searchParams } = new URL(req.url);
+    const productId = searchParams.get("productId");
+
+    if (!productId) {
+      return NextResponse.json(
+        { success: false, error: "Product ID is required" },
+        { status: 400 }
+      );
+    }
+
     const reviews = await prisma.review.findMany({
-      include: {
-        product: {
-          select: {
-            id: true,
-            title: true,
-            slug: true,
-          },
-        },
-        user: {
-          select: {
-            name: true,
-            email: true,
-          },
-        },
+      where: {
+        productId,
+        status: "APPROVED",
       },
       orderBy: { createdAt: "desc" },
     });
 
-    return NextResponse.json({ success: true, reviews });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error?.message || "Failed to fetch reviews" },
-      { status: 500 }
-    );
+    const totalReviews = reviews.length;
+    const avgRating =
+      totalReviews > 0
+        ? (reviews.reduce((sum, r) => sum + r.rating, 0) / totalReviews).toFixed(1)
+        : "5.0";
+
+    return NextResponse.json({
+      success: true,
+      reviews,
+      avgRating: parseFloat(avgRating),
+      totalReviews,
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to load reviews";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
 
-// 2. PATCH: Update Review Status (APPROVED, REJECTED, PENDING)
-export async function PATCH(req: Request) {
+// 2. POST: Submit Review with Strict DELIVERED Verification
+export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { id, status } = body;
+    const { productId, rating, comment, customerName, phone } = body;
 
-    if (!id || !status) {
+    if (!productId || !rating || !comment) {
       return NextResponse.json(
-        { success: false, error: "Review ID and status are required" },
+        { success: false, error: "Rating and comment are required" },
         { status: 400 }
       );
     }
 
-    const updated = await prisma.review.update({
-      where: { id },
-      data: { status },
+    const cookieStore = await cookies();
+    const sessionUserId = cookieStore.get("customer_id")?.value;
+    const cleanPhone = phone ? String(phone).trim().replace(/\D/g, "") : "";
+
+    // 🔒 DELIVERY VERIFICATION CHECK
+    // Customer ne ye product order kiya ho AUR uska status "DELIVERED" ho chuka ho
+    const deliveredOrder = await prisma.order.findFirst({
+      where: {
+        orderStatus: "DELIVERED",
+        OR: [
+          sessionUserId ? { userId: sessionUserId } : {},
+          cleanPhone ? { customerPhone: cleanPhone } : {},
+          cleanPhone.length === 10 ? { customerPhone: `+91${cleanPhone}` } : {},
+        ].filter((cond) => Object.keys(cond).length > 0),
+        items: {
+          some: {
+            productId: productId,
+          },
+        },
+      },
     });
 
-    return NextResponse.json({ success: true, review: updated });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error?.message || "Failed to update review status" },
-      { status: 500 }
-    );
-  }
-}
-
-// 3. DELETE: Remove offensive / spam review
-export async function DELETE(req: Request) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const id = searchParams.get("id");
-
-    if (!id) {
+    if (!deliveredOrder) {
       return NextResponse.json(
-        { success: false, error: "Review ID is required" },
-        { status: 400 }
+        {
+          success: false,
+          error:
+            "Aap review sirf tabhi de sakte hain jab aapka order successfully DELIVER ho chuka ho.",
+        },
+        { status: 403 }
       );
     }
 
-    await prisma.review.delete({
-      where: { id },
+    // 💾 SAVE REVIEW MATCHING YOUR EXACT SCHEMA
+    const newReview = await prisma.review.create({
+      data: {
+        productId,
+        rating: Number(rating),
+        comment: String(comment).trim(),
+        customerName: customerName || deliveredOrder.customerName || "Verified Buyer",
+        status: "APPROVED",
+        images: [],
+        userId: sessionUserId || deliveredOrder.userId || null,
+      },
     });
 
-    return NextResponse.json({ success: true, message: "Review deleted" });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error?.message || "Failed to delete review" },
-      { status: 500 }
-    );
+    return NextResponse.json({
+      success: true,
+      message: "Verified review submitted successfully!",
+      review: newReview,
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to submit review";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

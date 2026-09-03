@@ -2,13 +2,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { 
   ShoppingBag, 
   Heart, 
   Search, 
   Loader2, 
   Sparkles,
-  Check
+  Check,
+  ArrowRight
 } from "lucide-react";
 import { useCart } from "@/hooks/useCart";
 import { useWishlist } from "@/hooks/useWishlist";
@@ -32,8 +34,19 @@ interface Product {
   stock?: number;
 }
 
+interface Banner {
+  id: string;
+  title: string;
+  subtitle?: string;
+  imageUrl: string;
+  linkUrl: string;
+  badgeText?: string;
+  isActive: boolean;
+}
+
 export default function ShopPage() {
   const [products, setProducts] = useState<Product[]>([]);
+  const [banners, setBanners] = useState<Banner[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("ALL");
@@ -43,22 +56,33 @@ export default function ShopPage() {
   const { wishlist, toggleWishlist } = useWishlist();
 
   useEffect(() => {
-    const fetchProducts = async () => {
+    const fetchData = async () => {
       try {
         setLoading(true);
-        const res = await fetch("/api/products");
-        const data = await res.json();
-        if (data.success && data.products) {
-          setProducts(data.products);
+        const [prodRes, bannerRes] = await Promise.all([
+          fetch("/api/products", { cache: "no-store" }),
+          fetch("/api/admin/banners", { cache: "no-store" }),
+        ]);
+
+        const prodData = await prodRes.json();
+        if (prodData.success && prodData.products) {
+          setProducts(prodData.products);
+        } else if (Array.isArray(prodData)) {
+          setProducts(prodData);
+        }
+
+        const bannerData = await bannerRes.json();
+        if (bannerData.success && Array.isArray(bannerData.banners)) {
+          setBanners(bannerData.banners.filter((b: Banner) => b.isActive));
         }
       } catch (err) {
-        console.error("Failed to load products:", err);
+        console.error("Failed to load catalog data:", err);
       } finally {
         setLoading(false);
       }
     };
 
-    void fetchProducts();
+    void fetchData();
   }, []);
 
   const rawCategories = products
@@ -75,6 +99,9 @@ export default function ShopPage() {
 
   const handleAddToCart = (product: Product, e: React.MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation();
+    if ((product.stock ?? 1) <= 0) return;
+
     cart.addItem({
       id: product.id,
       title: product.title,
@@ -88,6 +115,7 @@ export default function ShopPage() {
 
   const handleWishlistToggle = (product: Product, e: React.MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     toggleWishlist({
       id: product.id,
       title: product.title,
@@ -95,6 +123,8 @@ export default function ShopPage() {
       image: product.images?.[0]?.url || "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=500&q=80",
     });
   };
+
+  const activeShopBanner = banners[0];
 
   return (
     <div className="min-h-screen bg-slate-50 py-8 px-4 sm:px-6 lg:px-8">
@@ -123,6 +153,36 @@ export default function ShopPage() {
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           </div>
         </div>
+
+        {/* PROMOTIONAL BANNER (LIVE CMS SYNCED) */}
+        {activeShopBanner && (
+          <Link
+            href={activeShopBanner.linkUrl || "/shop"}
+            className="block group relative overflow-hidden rounded-3xl border border-slate-200 shadow-xs hover:shadow-md transition duration-300"
+          >
+            <div className="w-full h-40 sm:h-52 bg-gradient-to-r from-emerald-950 to-slate-900 relative flex items-center">
+              {activeShopBanner.imageUrl && (
+                <img
+                  src={activeShopBanner.imageUrl}
+                  alt={activeShopBanner.title}
+                  className="w-full h-full object-cover group-hover:scale-105 transition duration-500 opacity-85"
+                />
+              )}
+              <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/40 to-transparent flex flex-col justify-center p-6 sm:p-10 text-white">
+                <span className="text-[10px] font-black uppercase tracking-widest bg-emerald-500 text-white px-3 py-1 rounded-full w-fit mb-1.5">
+                  {activeShopBanner.badgeText || "SPECIAL DEAL"}
+                </span>
+                <h2 className="text-lg sm:text-2xl font-black">{activeShopBanner.title}</h2>
+                {activeShopBanner.subtitle && (
+                  <p className="text-xs text-gray-200 mt-1 max-w-md line-clamp-1">{activeShopBanner.subtitle}</p>
+                )}
+                <span className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-emerald-400 group-hover:text-emerald-300">
+                  Shop Deal <ArrowRight className="w-3.5 h-3.5" />
+                </span>
+              </div>
+            </div>
+          </Link>
+        )}
 
         {/* Categories Bar */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
@@ -162,18 +222,30 @@ export default function ShopPage() {
                 product.images?.[0]?.url ||
                 "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=500&q=80";
               const isWishlisted = wishlist.some((w) => w.id === product.id);
+              const isOutOfStock = (product.stock ?? 1) <= 0;
+              const productUrl = `/product/${product.slug || product.id}`;
 
               return (
-                <div
+                <Link
                   key={product.id}
-                  className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs hover:shadow-md transition flex flex-col justify-between group"
+                  href={productUrl}
+                  className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs hover:shadow-md transition flex flex-col justify-between group cursor-pointer"
                 >
                   <div className="relative aspect-square bg-slate-50 overflow-hidden">
                     <img
                       src={imgUrl}
                       alt={product.title}
-                      className="w-full h-full object-contain p-4 group-hover:scale-105 transition duration-300"
+                      className={`w-full h-full object-contain p-4 group-hover:scale-105 transition duration-300 ${
+                        isOutOfStock ? "grayscale opacity-60" : ""
+                      }`}
                     />
+                    
+                    {isOutOfStock && (
+                      <span className="absolute top-2.5 left-2.5 bg-rose-600 text-white text-[10px] font-black px-2 py-0.5 rounded-md">
+                        OUT OF STOCK
+                      </span>
+                    )}
+
                     <button
                       onClick={(e) => handleWishlistToggle(product, e)}
                       className="absolute top-2.5 right-2.5 p-2 bg-white/90 backdrop-blur-xs rounded-full border border-slate-100 shadow-2xs hover:bg-white text-slate-700 hover:text-red-500 transition cursor-pointer"
@@ -187,7 +259,7 @@ export default function ShopPage() {
                     <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
                       {product.category?.name || "Gadget"}
                     </p>
-                    <h3 className="font-bold text-xs text-slate-900 line-clamp-2 min-h-8">
+                    <h3 className="font-bold text-xs text-slate-900 line-clamp-2 min-h-8 group-hover:text-emerald-600 transition">
                       {product.title}
                     </h3>
 
@@ -203,13 +275,18 @@ export default function ShopPage() {
 
                       <button
                         onClick={(e) => handleAddToCart(product, e)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
-                          addedId === product.id
-                            ? "bg-emerald-600 text-white"
-                            : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                        disabled={isOutOfStock}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
+                          isOutOfStock
+                            ? "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
+                            : addedId === product.id
+                            ? "bg-emerald-600 text-white cursor-pointer"
+                            : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 cursor-pointer"
                         }`}
                       >
-                        {addedId === product.id ? (
+                        {isOutOfStock ? (
+                          "Sold Out"
+                        ) : addedId === product.id ? (
                           <>
                             <Check className="w-3.5 h-3.5" /> Added
                           </>
@@ -221,7 +298,7 @@ export default function ShopPage() {
                       </button>
                     </div>
                   </div>
-                </div>
+                </Link>
               );
             })}
           </div>

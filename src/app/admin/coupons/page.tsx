@@ -64,7 +64,7 @@ export default function AdminCouponsPage() {
           discountType,
           discountValue,
           minOrderValue,
-          maxDiscount,
+          maxDiscount: discountType === "PERCENTAGE" && maxDiscount ? maxDiscount : null,
           usageLimit,
           validTo,
         }),
@@ -119,6 +119,8 @@ export default function AdminCouponsPage() {
       const data = await res.json();
       if (data.success) {
         setCoupons((prev) => prev.filter((c) => c.id !== id));
+      } else {
+        alert("Error deleting coupon");
       }
     } catch (err) {
       alert("Error deleting coupon");
@@ -137,7 +139,7 @@ export default function AdminCouponsPage() {
         <div>
           <h1 className="text-2xl font-black text-slate-950">Coupons &amp; Discount Engine</h1>
           <p className="text-xs text-slate-600 font-semibold mt-1">
-            Create flat ₹ OFF, percentage %, and cart minimum discount offers.
+            Create flat ₹ OFF, percentage %, and cart minimum discount offers with max caps.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -226,7 +228,14 @@ export default function AdminCouponsPage() {
 
                     <td className="p-4 font-black text-slate-900">
                       {coupon.discountType === "PERCENTAGE" ? (
-                        <span>{coupon.discountValue}% OFF</span>
+                        <div>
+                          <span>{coupon.discountValue}% OFF</span>
+                          {coupon.maxDiscount && (
+                            <span className="block text-[10px] text-emerald-600 font-bold">
+                              (Max Cap: ₹{coupon.maxDiscount})
+                            </span>
+                          )}
+                        </div>
                       ) : coupon.discountType === "FLAT" ? (
                         <span>₹{coupon.discountValue} FLAT OFF</span>
                       ) : (
@@ -258,11 +267,11 @@ export default function AdminCouponsPage() {
                       >
                         {coupon.isActive ? (
                           <>
-                            <CheckCircle2 className="w-3 h-3" /> Active
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Active
                           </>
                         ) : (
                           <>
-                            <XCircle className="w-3 h-3" /> Paused
+                            <XCircle className="w-3 h-3 text-slate-400" /> Paused
                           </>
                         )}
                       </button>
@@ -296,7 +305,7 @@ export default function AdminCouponsPage() {
               </div>
               <button
                 onClick={() => setShowModal(false)}
-                className="text-slate-400 hover:text-slate-600 font-black text-sm"
+                className="text-slate-400 hover:text-slate-600 font-black text-sm cursor-pointer"
               >
                 ✕
               </button>
@@ -321,7 +330,7 @@ export default function AdminCouponsPage() {
                   <select
                     value={discountType}
                     onChange={(e) => setDiscountType(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:border-emerald-600"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:border-emerald-600 cursor-pointer"
                   >
                     <option value="PERCENTAGE">Percentage (% OFF)</option>
                     <option value="FLAT">Flat Amount (₹ OFF)</option>
@@ -330,10 +339,11 @@ export default function AdminCouponsPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              {/* Discount Value, Max Discount Cap, Min Order Value */}
+              <div className={`grid ${discountType === "PERCENTAGE" ? "grid-cols-3" : "grid-cols-2"} gap-3`}>
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1">
-                    {discountType === "PERCENTAGE" ? "Discount Percentage (%) *" : "Flat Discount (₹) *"}
+                    {discountType === "PERCENTAGE" ? "Discount (%) *" : "Flat Discount (₹) *"}
                   </label>
                   <input
                     type="number"
@@ -345,6 +355,22 @@ export default function AdminCouponsPage() {
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:border-emerald-600"
                   />
                 </div>
+
+                {/* Max Discount Input (Only visible when Percentage is selected) */}
+                {discountType === "PERCENTAGE" && (
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                      Max Discount (₹) <span className="text-[10px] text-slate-400">(Optional)</span>
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 200"
+                      value={maxDiscount}
+                      onChange={(e) => setMaxDiscount(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:border-emerald-600"
+                    />
+                  </div>
+                )}
 
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1">Min Order Value (₹)</label>
@@ -376,7 +402,7 @@ export default function AdminCouponsPage() {
                     type="date"
                     value={validTo}
                     onChange={(e) => setValidTo(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:border-emerald-600"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:border-emerald-600 cursor-pointer"
                   />
                 </div>
               </div>
@@ -385,7 +411,7 @@ export default function AdminCouponsPage() {
                 <label className="text-xs font-bold text-slate-700 block mb-1">Description / Campaign Notes</label>
                 <input
                   type="text"
-                  placeholder="e.g. 10% off on all festive orders"
+                  placeholder="e.g. 10% off on all festive orders up to ₹200"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-emerald-600"
@@ -396,7 +422,7 @@ export default function AdminCouponsPage() {
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition"
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer"
                 >
                   Cancel
                 </button>
