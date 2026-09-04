@@ -300,3 +300,17 @@ model StaticPage {
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
 }
+
+// 19. Supplier Payout 
+model SupplierPayout {
+  id               String   @id @default(cuid())
+  payoutRef        String   @unique // e.g. PO-301
+  vendorName       String
+  settlementAmount Float
+  bankAccount      String   // e.g. HDFC Bank ****9812
+  dueDate          DateTime
+  status           String   @default("SCHEDULED") // SCHEDULED, SETTLED, PROCESSING
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}

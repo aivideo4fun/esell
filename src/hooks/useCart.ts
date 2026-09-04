@@ -23,10 +23,11 @@ interface CartStore {
   closeCart: () => void;
   totalItems: () => number;
   totalPrice: () => number;
+  syncWithLiveCatalog: () => Promise<void>;
 }
 
-const MAX_UNIQUE_PRODUCTS = 20; // Maximum 20 types of products
-const MAX_ITEM_QUANTITY = 9;    // Maximum 9 quantity per product
+const MAX_UNIQUE_PRODUCTS = 20;
+const MAX_ITEM_QUANTITY = 9;
 
 export const useCart = create<CartStore>()(
   persist(
@@ -37,17 +38,35 @@ export const useCart = create<CartStore>()(
       openCart: () => set({ isOpen: true }),
       closeCart: () => set({ isOpen: false }),
 
+      // Live catalog verification: DB se deleted products ko cart se remove karta hai
+      syncWithLiveCatalog: async () => {
+        const currentItems = get().items;
+        if (currentItems.length === 0) return;
+
+        try {
+          const res = await fetch("/api/products", { cache: "no-store" });
+          const data = await res.json();
+          const liveProducts = data.products || (Array.isArray(data) ? data : []);
+          const liveIds = new Set(liveProducts.map((p: any) => p.id));
+
+          const validItems = currentItems.filter((item) => liveIds.has(item.id));
+          if (validItems.length !== currentItems.length) {
+            set({ items: validItems });
+          }
+        } catch {
+          // silent fallback on network errors
+        }
+      },
+
       addItem: (product) => {
         const currentItems = get().items;
         const targetSize = product.size || "Standard";
 
-        // Unique item identification (id + size)
         const existingIndex = currentItems.findIndex(
           (item) => item.id === product.id && (item.size || "Standard") === targetSize
         );
 
         if (existingIndex > -1) {
-          // Item pehle se cart mein hai -> Quantity update check
           const existingItem = currentItems[existingIndex];
           const newQty = existingItem.quantity + (product.quantity || 1);
 
@@ -66,13 +85,11 @@ export const useCart = create<CartStore>()(
           return true;
         }
 
-        // Agar naya product type hai, toh 20 items ki limit check karein
         if (currentItems.length >= MAX_UNIQUE_PRODUCTS) {
           alert(`Aap cart mein maximum ${MAX_UNIQUE_PRODUCTS} alag-alag products hi add kar sakte hain.`);
           return false;
         }
 
-        // Add new item to cart
         const initialQty = Math.min(product.quantity || 1, MAX_ITEM_QUANTITY);
         set({
           items: [
@@ -93,13 +110,11 @@ export const useCart = create<CartStore>()(
       updateQuantity: (id, quantity, size) => {
         const targetSize = size || "Standard";
 
-        // Agar quantity 0 ya negative karein toh remove kar dein
         if (quantity <= 0) {
           get().removeItem(id, size);
           return;
         }
 
-        // Max 9 quantity restriction
         if (quantity > MAX_ITEM_QUANTITY) {
           alert(`Ek product ki maximum limit ${MAX_ITEM_QUANTITY} units hai.`);
           return;
@@ -135,9 +150,15 @@ export const useCart = create<CartStore>()(
       },
     }),
     {
-      name: "catchbuddy-customer-cart", // localStorage key
+      name: "catchbuddy-customer-cart",
       storage: createJSONStorage(() => localStorage),
       skipHydration: false,
+      onRehydrateStorage: () => (state) => {
+        // Hydration complete hote hi live catalog check karein
+        if (state) {
+          void state.syncWithLiveCatalog();
+        }
+      },
     }
   )
 );

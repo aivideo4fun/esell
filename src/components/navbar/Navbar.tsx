@@ -14,7 +14,8 @@ import {
   MapPin,
   TicketPercent,
   Bell,
-  HelpCircle
+  HelpCircle,
+  Phone
 } from "lucide-react";
 import { useCart } from "@/hooks/useCart";
 import { useWishlist } from "@/hooks/useWishlist";
@@ -23,6 +24,7 @@ interface CustomerUser {
   id?: string;
   name?: string;
   phone?: string;
+  email?: string;
 }
 
 export default function Navbar() {
@@ -37,6 +39,36 @@ export default function Navbar() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  // Sync customer details from localStorage or API
+  useEffect(() => {
+    const syncCustomer = () => {
+      const stored = localStorage.getItem("cb_customer");
+      if (stored) {
+        try {
+          setCustomer(JSON.parse(stored));
+        } catch {
+          setCustomer(null);
+        }
+      } else {
+        // Fallback check cookie / backend session
+        fetch("/api/auth/customer")
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.authenticated && data.user) {
+              setCustomer(data.user);
+            } else {
+              setCustomer(null);
+            }
+          })
+          .catch(() => setCustomer(null));
+      }
+    };
+
+    syncCustomer();
+    window.addEventListener("customer-auth-changed", syncCustomer);
+    return () => window.removeEventListener("customer-auth-changed", syncCustomer);
+  }, []);
+
   // Close dropdown when clicked outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -48,23 +80,6 @@ export default function Navbar() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  useEffect(() => {
-    const checkCustomerAuth = async () => {
-      try {
-        const res = await fetch("/api/auth/customer");
-        const data = await res.json();
-        if (data.authenticated && data.user) {
-          setCustomer(data.user);
-        } else {
-          setCustomer(null);
-        }
-      } catch {
-        setCustomer(null);
-      }
-    };
-    void checkCustomerAuth();
-  }, []);
-
   const handleCartClick = () => {
     if (cart.openCart) {
       cart.openCart();
@@ -72,9 +87,11 @@ export default function Navbar() {
   };
 
   const handleLogout = () => {
+    localStorage.removeItem("cb_customer");
     document.cookie = "customer_id=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;";
     setCustomer(null);
     setDropdownOpen(false);
+    window.dispatchEvent(new Event("customer-auth-changed"));
     window.location.reload();
   };
 
@@ -86,7 +103,6 @@ export default function Navbar() {
     "DIRECT DISPATCH",
   ];
 
-  // Full Customer Portal Menu Structure
   const customerMenuItems = [
     { label: "My Profile", href: "/account", icon: User },
     { label: "My Orders", href: "/orders", icon: Package },
@@ -122,7 +138,7 @@ export default function Navbar() {
         </div>
 
         {/* Action Links */}
-        <div className="flex items-center gap-4 sm:gap-6">
+        <div className="flex items-center gap-3 sm:gap-5">
           <Link
             href="/shop"
             className="text-xs font-bold text-[#64748b] hover:text-[#065f46] transition hidden sm:inline"
@@ -136,7 +152,7 @@ export default function Navbar() {
             <ShieldCheck className="w-4 h-4 text-[#16a34a]" /> Track Order
           </Link>
 
-          {/* Wishlist Link with Live Counter */}
+          {/* Wishlist Link */}
           <Link
             href="/wishlist"
             className="relative p-2 text-gray-700 hover:text-red-500 transition cursor-pointer"
@@ -150,24 +166,35 @@ export default function Navbar() {
             )}
           </Link>
 
-          {/* User Account / Login Dropdown */}
+          {/* User Account / Login Button */}
           {customer ? (
             <div className="relative" ref={dropdownRef}>
               <button
                 type="button"
                 onClick={() => setDropdownOpen(!dropdownOpen)}
-                className="flex items-center gap-1.5 text-xs font-bold text-[#065f46] bg-[#f0fdf4] border border-[#bbf7d0] hover:bg-[#dcfce7] px-3 py-1.5 rounded-xl transition cursor-pointer"
+                className="flex items-center gap-2 text-left bg-[#f0fdf4] border border-[#bbf7d0] hover:bg-[#dcfce7] px-3 py-1.5 rounded-2xl transition cursor-pointer shadow-2xs"
               >
-                <User className="w-3.5 h-3.5 text-[#16a34a]" />
-                <span className="max-w-20 sm:max-w-28 truncate">{customer.name || customer.phone}</span>
+                <div className="w-7 h-7 rounded-full bg-[#16a34a] text-white flex items-center justify-center text-xs font-black shrink-0">
+                  {customer.name ? customer.name.charAt(0).toUpperCase() : "U"}
+                </div>
+                <div className="flex flex-col leading-tight">
+                  <span className="text-xs font-black text-[#0f172a] max-w-[120px] truncate">
+                    {customer.name || "Customer"}
+                  </span>
+                  <span className="text-[10px] font-bold text-[#16a34a] max-w-[120px] truncate">
+                    {customer.phone || customer.email || "Verified"}
+                  </span>
+                </div>
               </button>
 
               {dropdownOpen && (
-                <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-2xl shadow-xl p-2 z-50 text-xs animate-in fade-in slide-in-from-top-2 duration-150">
+                <div className="absolute right-0 mt-2 w-60 bg-white border border-gray-200 rounded-2xl shadow-xl p-2 z-50 text-xs animate-in fade-in slide-in-from-top-2 duration-150">
                   {/* Account Header */}
-                  <div className="p-2.5 border-b border-gray-100">
-                    <p className="font-black text-[#0f172a] truncate">{customer.name || "CatchBuddy Customer"}</p>
-                    <p className="text-[11px] text-[#64748b] font-semibold truncate">{customer.phone}</p>
+                  <div className="p-3 border-b border-gray-100 bg-emerald-50/50 rounded-xl mb-1">
+                    <p className="font-black text-[#0f172a] truncate">{customer.name || "Customer"}</p>
+                    <p className="text-[11px] text-emerald-700 font-bold flex items-center gap-1 mt-0.5">
+                      <Phone className="w-3 h-3 text-emerald-600" /> {customer.phone || "No phone added"}
+                    </p>
                   </div>
 
                   {/* Customer Portal Items */}
@@ -211,7 +238,7 @@ export default function Navbar() {
           ) : (
             <Link
               href="/login"
-              className="text-xs font-bold text-[#64748b] hover:text-[#065f46] flex items-center gap-1.5 transition"
+              className="text-xs font-bold text-[#065f46] bg-[#f0fdf4] border border-[#bbf7d0] hover:bg-[#dcfce7] px-3.5 py-1.5 rounded-xl flex items-center gap-1.5 transition"
             >
               <User className="w-4 h-4 text-[#16a34a]" /> Login
             </Link>

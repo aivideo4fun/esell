@@ -16,14 +16,7 @@ import {
   ChevronRight,
   Loader2,
   CheckCircle2,
-  Copy,
-  Check,
-  Plus,
-  Trash2,
-  Search,
-  Sparkles,
-  Clock,
-  Send
+  Plus
 } from "lucide-react";
 
 export default function CustomerAccountPage() {
@@ -64,31 +57,58 @@ export default function CustomerAccountPage() {
     const loadAllCustomerData = async () => {
       try {
         setLoading(true);
-        // Load Profile
-        const resProf = await fetch("/api/customer/profile");
-        const dataProf = await resProf.json();
-        if (dataProf.success && dataProf.customer) {
-          setProfileData({
-            name: dataProf.customer.name || "CatchBuddy Customer",
-            email: dataProf.customer.email || "customer@example.com",
-            phone: dataProf.customer.phone || "",
-          });
+
+        // 1. Check local storage first for instant sync
+        const storedCustomer = localStorage.getItem("cb_customer");
+        if (storedCustomer) {
+          try {
+            const parsed = JSON.parse(storedCustomer);
+            setProfileData((prev) => ({
+              ...prev,
+              name: parsed.name || prev.name,
+              email: parsed.email || prev.email,
+              phone: parsed.phone || prev.phone,
+            }));
+          } catch {}
         }
 
-        // Load Orders
-        const resOrders = await fetch("/api/orders");
-        const dataOrders = await resOrders.json();
-        if (dataOrders.success) setOrders(dataOrders.orders || []);
+        // 2. Load Profile from DB
+        try {
+          const resProf = await fetch("/api/customer/profile");
+          const dataProf = await resProf.json();
+          if (dataProf.success && dataProf.customer) {
+            const updatedProfile = {
+              name: dataProf.customer.name || "CatchBuddy Customer",
+              email: dataProf.customer.email || "customer@example.com",
+              phone: dataProf.customer.phone || "",
+            };
+            setProfileData(updatedProfile);
+            localStorage.setItem("cb_customer", JSON.stringify(updatedProfile));
+            window.dispatchEvent(new Event("customer-auth-changed"));
+          }
+        } catch {}
 
-        // Load Coupons
-        const resCoupons = await fetch("/api/customer/coupons");
-        const dataCoupons = await resCoupons.json();
-        if (dataCoupons.success) setCoupons(dataCoupons.coupons || []);
+        // 3. Load Orders
+        try {
+          const resOrders = await fetch("/api/orders");
+          const dataOrders = await resOrders.json();
+          if (dataOrders.success) setOrders(dataOrders.orders || []);
+        } catch {}
 
-        // Load Addresses
-        const resAddr = await fetch("/api/customer/addresses");
-        const dataAddr = await resAddr.json();
-        if (dataAddr.success) setAddresses(dataAddr.addresses || []);
+        // 4. Load Coupons
+        try {
+          const resCoupons = await fetch("/api/customer/coupons");
+          const dataCoupons = await resCoupons.json();
+          if (dataCoupons.success) setCoupons(dataCoupons.coupons || []);
+        } catch {}
+
+        // 5. Load Addresses
+        try {
+          const resAddr = await fetch("/api/customer/addresses");
+          const dataAddr = await resAddr.json();
+          if (dataAddr.success) setAddresses(dataAddr.addresses || []);
+        } catch {}
+
       } catch (err) {
         console.error("Failed to load customer data", err);
       } finally {
@@ -96,7 +116,7 @@ export default function CustomerAccountPage() {
       }
     };
 
-    loadAllCustomerData();
+    void loadAllCustomerData();
   }, []);
 
   const handleProfileSave = async (e: React.FormEvent) => {
@@ -110,12 +130,16 @@ export default function CustomerAccountPage() {
         body: JSON.stringify({ name: profileData.name, phone: profileData.phone }),
       });
       const data = await res.json();
-      if (data.success) {
+      if (data.success || res.ok) {
+        // Sync local storage and header state immediately
+        localStorage.setItem("cb_customer", JSON.stringify(profileData));
+        window.dispatchEvent(new Event("customer-auth-changed"));
+
         setSavedSuccess(true);
         setTimeout(() => setSavedSuccess(false), 3000);
       }
     } catch (err) {
-      console.error(err);
+      console.error("Failed to update profile", err);
     } finally {
       setSaving(false);
     }
@@ -136,7 +160,7 @@ export default function CustomerAccountPage() {
         setNewAddr({ fullName: "", phone: "", street: "", city: "", state: "", pincode: "" });
       }
     } catch (err) {
-      console.error(err);
+      console.error("Failed to add address", err);
     }
   };
 
@@ -147,7 +171,9 @@ export default function CustomerAccountPage() {
   };
 
   const handleLogout = () => {
+    localStorage.removeItem("cb_customer");
     document.cookie = "customer_id=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;";
+    window.dispatchEvent(new Event("customer-auth-changed"));
     window.location.href = "/";
   };
 
@@ -269,7 +295,7 @@ export default function CustomerAccountPage() {
                       required
                       value={profileData.name}
                       onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
-                      className="w-full border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold outline-none focus:border-emerald-500"
+                      className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold outline-none focus:border-emerald-500"
                     />
                   </div>
 
@@ -279,7 +305,7 @@ export default function CustomerAccountPage() {
                       type="email"
                       disabled
                       value={profileData.email}
-                      className="w-full border border-slate-200 bg-slate-50 rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-400 cursor-not-allowed"
+                      className="w-full border border-slate-200 bg-slate-50 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-400 cursor-not-allowed"
                     />
                   </div>
 
@@ -290,7 +316,7 @@ export default function CustomerAccountPage() {
                       placeholder="+91 9876543210"
                       value={profileData.phone}
                       onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
-                      className="w-full border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold outline-none focus:border-emerald-500"
+                      className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold outline-none focus:border-emerald-500"
                     />
                   </div>
 
@@ -298,7 +324,7 @@ export default function CustomerAccountPage() {
                     <button
                       type="submit"
                       disabled={saving}
-                      className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-2"
+                      className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
                     >
                       {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Save Changes
                     </button>
@@ -361,7 +387,7 @@ export default function CustomerAccountPage() {
                     placeholder="e.g. CB-89234"
                     className="w-full border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold outline-none focus:border-emerald-500"
                   />
-                  <button className="px-5 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold shrink-0">
+                  <button className="px-5 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold shrink-0 cursor-pointer">
                     Track
                   </button>
                 </div>
@@ -443,7 +469,7 @@ export default function CustomerAccountPage() {
                         className="border bg-white rounded-xl px-3 py-1.5 text-xs outline-none"
                       />
                     </div>
-                    <button type="submit" className="px-4 py-1.5 bg-emerald-600 text-white rounded-xl text-xs font-bold">
+                    <button type="submit" className="px-4 py-1.5 bg-emerald-600 text-white rounded-xl text-xs font-bold cursor-pointer">
                       Save Location
                     </button>
                   </form>
@@ -569,7 +595,7 @@ export default function CustomerAccountPage() {
                       onChange={(e) => setSupportMsg({ ...supportMsg, message: e.target.value })}
                       className="w-full border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold outline-none"
                     />
-                    <button type="submit" className="px-5 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold">
+                    <button type="submit" className="px-5 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold cursor-pointer">
                       Submit Request
                     </button>
                   </form>
