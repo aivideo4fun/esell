@@ -6,60 +6,63 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { name, phone, email, items, totalAmount } = body;
+    const { phone, items, totalAmount } = body;
 
-    // Validation: Phone aur cart items hone chahiye
-    if (!phone || !items || !Array.isArray(items) || items.length === 0) {
-      return NextResponse.json({ success: false, message: "Incomplete data" }, { status: 400 });
+    const cleanPhone = phone ? String(phone).trim().replace(/\D/g, "") : "";
+
+    if (!cleanPhone || cleanPhone.length < 10) {
+      return NextResponse.json(
+        { success: false, error: "Valid 10-digit mobile number required" },
+        { status: 400 }
+      );
     }
 
-    const cleanPhone = String(phone).trim();
-    const cleanName = String(name || "Shopper").trim();
-    const cleanEmail = String(email || "").trim();
-
-    // Check karein kya is customer ka already koi recent pending draft order hai
+    // Relation-safe search matching Address, Customer, or User
     const existingDraft = await prisma.order.findFirst({
       where: {
-        customerPhone: cleanPhone,
         paymentStatus: "PENDING",
         orderStatus: "PENDING",
+        OR: [
+          { address: { phone: { contains: cleanPhone } } },
+          { customer: { phone: { contains: cleanPhone } } },
+          { user: { phone: { contains: cleanPhone } } },
+        ],
       },
-      orderBy: { createdAt: "desc" },
+      include: {
+        items: true,
+        address: true,
+      },
     });
-
-    const summaryTitles = items.map((i: any) => i.title || "Product").join(", ");
 
     if (existingDraft) {
-      // Existing draft ko update karein
-      await prisma.order.update({
-        where: { id: existingDraft.id },
-        data: {
-          customerName: cleanName,
-          customerPhone: cleanPhone,
-          totalAmount: parseFloat(totalAmount || 0),
-          shippingAddress: summaryTitles,
-        },
+      return NextResponse.json({
+        success: true,
+        message: "Cart activity tracked",
+        orderId: existingDraft.id,
       });
-      return NextResponse.json({ success: true, draftId: existingDraft.id });
     }
 
-    // Naya abandoned/pending order record banayein
-    const newDraft = await prisma.order.create({
-      data: {
-        orderNumber: `AB-${Date.now().toString().slice(-6)}`,
-        customerName: cleanName,
-        customerPhone: cleanPhone,
-        shippingAddress: summaryTitles,
-        totalAmount: parseFloat(totalAmount || 0),
-        paymentMethod: "PENDING_CHECKOUT",
-        paymentStatus: "PENDING",
-        orderStatus: "PENDING",
-      },
+    // Ensure customer record exists for the phone
+    let customer = await prisma.customer.findUnique({
+      where: { phone: cleanPhone },
     });
 
-    return NextResponse.json({ success: true, draftId: newDraft.id });
+    if (!customer) {
+      customer = await prisma.customer.create({
+        data: {
+          phone: cleanPhone,
+          name: `Shopper ${cleanPhone.slice(-4)}`,
+        },
+      });
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: "Cart tracking active",
+      customerId: customer.id,
+    });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Tracking failed";
+    const msg = error instanceof Error ? error.message : "Failed to track cart";
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }
