@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const orders = await prisma.order.findMany({
@@ -10,7 +12,10 @@ export async function GET() {
         totalAmount: true,
         orderStatus: true,
         paymentStatus: true,
-        paymentMethod: true,
+        payments: {
+          select: { gateway: true },
+          take: 1,
+        },
         createdAt: true,
         user: { select: { name: true, email: true } },
       },
@@ -29,7 +34,7 @@ export async function GET() {
         orderId: o.orderNumber || o.id.slice(-6).toUpperCase(),
         customer: o.user?.name || "Direct Customer",
         amount: o.totalAmount,
-        gateway: o.paymentMethod || "Razorpay (Online)",
+        gateway: o.payments?.[0]?.gateway || "Razorpay (Online)",
         status: o.paymentStatus === "REFUNDED" ? "COMPLETED" : "PENDING",
         date: new Date(o.createdAt).toLocaleDateString("en-IN", {
           day: "numeric",
