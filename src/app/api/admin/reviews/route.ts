@@ -61,20 +61,30 @@ export async function POST(req: Request) {
     const cleanPhone = phone ? String(phone).trim().replace(/\D/g, "") : "";
 
     // 🔒 DELIVERY VERIFICATION CHECK
-    // Customer ne ye product order kiya ho AUR uska status "DELIVERED" ho chuka ho
+    // Order relation matching Address/User/Customer models
     const deliveredOrder = await prisma.order.findFirst({
       where: {
         orderStatus: "DELIVERED",
         OR: [
           sessionUserId ? { userId: sessionUserId } : {},
-          cleanPhone ? { customerPhone: cleanPhone } : {},
-          cleanPhone.length === 10 ? { customerPhone: `+91${cleanPhone}` } : {},
+          cleanPhone
+            ? {
+                address: {
+                  phone: { contains: cleanPhone },
+                },
+              }
+            : {},
         ].filter((cond) => Object.keys(cond).length > 0),
         items: {
           some: {
             productId: productId,
           },
         },
+      },
+      include: {
+        user: { select: { name: true } },
+        customer: { select: { name: true } },
+        address: { select: { fullName: true } },
       },
     });
 
@@ -89,13 +99,21 @@ export async function POST(req: Request) {
       );
     }
 
+    // Customer Name fallback via relations
+    const verifiedCustomerName =
+      customerName ||
+      deliveredOrder.user?.name ||
+      deliveredOrder.customer?.name ||
+      deliveredOrder.address?.fullName ||
+      "Verified Buyer";
+
     // 💾 SAVE REVIEW MATCHING YOUR EXACT SCHEMA
     const newReview = await prisma.review.create({
       data: {
         productId,
         rating: Number(rating),
         comment: String(comment).trim(),
-        customerName: customerName || deliveredOrder.customerName || "Verified Buyer",
+        customerName: verifiedCustomerName,
         status: "APPROVED",
         images: [],
         userId: sessionUserId || deliveredOrder.userId || null,
