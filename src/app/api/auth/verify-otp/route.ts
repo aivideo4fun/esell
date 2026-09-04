@@ -1,84 +1,87 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { cookies } from "next/headers";
+
+export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
-    const { identifier, otp, name } = await req.json();
+    const { identifier, phone, email, otp, name } = await req.json();
+    const target = (identifier || phone || email || "").trim();
+    const enteredOtp = (otp || "").trim();
 
-    if (!identifier || !otp) {
+    if (!target || !enteredOtp) {
       return NextResponse.json(
-        { success: false, error: "Target identifier and OTP are required" },
+        { success: false, error: "Identifier and OTP are required" },
         { status: 400 }
       );
     }
 
-    const cleanTarget = identifier.trim();
-    const cleanOtp = otp.trim();
-
-    // 1. Verify OTP from Database
     const record = await prisma.verificationOtp.findFirst({
       where: {
-        identifier: cleanTarget,
-        otp: cleanOtp,
-        expiresAt: { gt: new Date() }, // Expiry check
+        identifier: target,
+        otp: enteredOtp,
       },
     });
 
     if (!record) {
       return NextResponse.json(
-        { success: false, error: "Invalid or expired OTP. Please try again." },
+        { success: false, error: "Galat OTP code daala hai. Kripya dobara check karein." },
         { status: 400 }
       );
     }
 
-    // 2. Clear used OTP
-    await prisma.verificationOtp.deleteMany({
-      where: { identifier: cleanTarget },
+    if (new Date() > record.expiresAt) {
+      await prisma.verificationOtp.delete({ where: { id: record.id } });
+      return NextResponse.json(
+        { success: false, error: "OTP expire ho gaya hai. Dobara OTP mangwayein." },
+        { status: 400 }
+      );
+    }
+
+    // OTP verify hone ke baad record delete
+    await prisma.verificationOtp.delete({ where: { id: record.id } });
+
+    const isEmail = target.includes("@");
+    const cleanPhone = target.replace("+91", "").trim();
+
+    // Database mein user dhundhein ya create karein
+    let user = await prisma.user.findFirst({
+      where: isEmail ? { email: target } : { phone: cleanPhone },
     });
 
-    // 3. Prevent Duplicate: Check if Customer already exists
-    const isEmail = cleanTarget.includes("@");
-    let customer = await prisma.customer.findFirst({
-      where: isEmail ? { email: cleanTarget } : { phone: cleanTarget },
-    });
-
-    // If new customer, create account
-    if (!customer) {
-      customer = await prisma.customer.create({
+    if (!user) {
+      user = await prisma.user.create({
         data: {
-          phone: isEmail ? null : cleanTarget,
-          email: isEmail ? cleanTarget : null,
-          name: name ? name.trim() : "Verified Customer",
+          name: name?.trim() || (isEmail ? target.split("@")[0] : `User ${cleanPhone.slice(-4)}`),
+          email: isEmail ? target : `customer_${Date.now()}@catchbuddy.store`,
+          phone: isEmail ? null : cleanPhone,
+          role: "CUSTOMER",
         },
       });
     }
 
-    // 4. Secure Authentication Cookie (prevents multiple login prompts)
-    const cookieStore = await cookies();
-    cookieStore.set("customer_id", customer.id, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+    const response = NextResponse.json({
+      success: true,
+      message: "Verified successfully",
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone || cleanPhone,
+      },
+    });
+
+    // Customer Session Cookie (30 Days)
+    response.cookies.set("customer_id", user.id, {
       path: "/",
-      maxAge: 60 * 60 * 24 * 60, // 60 Days session
+      maxAge: 30 * 24 * 60 * 60,
+      httpOnly: false,
       sameSite: "lax",
     });
 
-    return NextResponse.json({
-      success: true,
-      message: "Customer verified successfully",
-      user: {
-        id: customer.id,
-        name: customer.name,
-        phone: customer.phone,
-        email: customer.email,
-      },
-    });
-  } catch (error) {
-    console.error("Verify OTP Error:", error);
-    return NextResponse.json(
-      { success: false, error: "Verification failed. Try again." },
-      { status: 500 }
-    );
+    return response;
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Verification failed";
+    return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }

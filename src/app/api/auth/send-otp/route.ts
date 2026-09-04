@@ -1,54 +1,58 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(req: Request) {
   try {
-    const { identifier } = await req.json(); // identifier can be mobile (10-digit) or email
+    const { identifier, phone, email } = await req.json();
+    const target = (identifier || phone || email || "").trim();
 
-    if (!identifier || identifier.trim().length < 5) {
+    if (!target || target.length < 5) {
       return NextResponse.json(
         { success: false, error: "Valid mobile number or email required" },
         { status: 400 }
       );
     }
 
-    const cleanTarget = identifier.trim();
+    // 6-digit random OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiry
 
-    // 1. Generate 6 digit secure numeric OTP
-    const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
-
-    // 2. Set 5 minutes expiry time
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
-
-    // 3. Delete old OTPs for this user and save new one
-    await prisma.verificationOtp.deleteMany({
-      where: { identifier: cleanTarget },
-    });
-
+    // Purane OTP delete karke naya save karein
+    await prisma.verificationOtp.deleteMany({ where: { identifier: target } });
     await prisma.verificationOtp.create({
       data: {
-        identifier: cleanTarget,
-        otp: generatedOtp,
+        identifier: target,
+        otp,
         expiresAt,
       },
     });
 
-    // 4. Send OTP via SMS / Email Service
-    // In Production: Call Fast2SMS / Msg91 / Twilio for SMS ya Nodemailer / Resend for Email
-    // Development me testing ke liye console log karein:
-    console.log(`\n============================\n[AUTH OTP for ${cleanTarget}]: ${generatedOtp}\n============================\n`);
+    // Fast2SMS integration check
+    const fast2smsKey = process.env.FAST2SMS_API_KEY;
+    const cleanPhone = target.replace("+91", "").trim();
+    const isMobile = /^[0-9]{10}$/.test(cleanPhone);
+
+    if (fast2smsKey && isMobile) {
+      try {
+        await fetch(
+          `https://www.fast2sms.com/dev/bulkV2?authorization=${fast2smsKey}&variables_values=${otp}&route=otp&numbers=${cleanPhone}`
+        );
+      } catch (smsErr) {
+        console.error("SMS Gateway Error:", smsErr);
+      }
+    }
+
+    console.log(`[OTP SENT] -> Target: ${target} | OTP: ${otp}`);
 
     return NextResponse.json({
       success: true,
       message: "OTP sent successfully",
-      // Testing ke liye Dev mode me OTP return kar rahe hain:
-      devOtp: process.env.NODE_ENV === "development" ? generatedOtp : undefined,
+      devOtp: process.env.NODE_ENV !== "production" ? otp : undefined,
     });
-  } catch (error) {
-    console.error("Send OTP Error:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to generate OTP" },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Failed to send OTP";
+    return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }
