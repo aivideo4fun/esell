@@ -17,6 +17,8 @@ export async function GET(req: Request) {
           OR: [{ id: orderIdParam }, { orderNumber: orderIdParam }],
         },
         include: {
+          address: true,
+          payments: true,
           items: {
             include: {
               product: {
@@ -42,6 +44,8 @@ export async function GET(req: Request) {
     const orders = await prisma.order.findMany({
       where: customerId ? { userId: customerId } : {},
       include: {
+        address: true,
+        payments: true,
         items: {
           include: {
             product: {
@@ -71,10 +75,13 @@ export async function POST(req: Request) {
     const { items, customerDetails, paymentMethod, totalAmount } = body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
-      return NextResponse.json({ success: false, error: "Cart mein items hone zaroori hain" }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: "Cart mein items hone zaroori hain" },
+        { status: 400 }
+      );
     }
 
-    // 🔒 STRICT STOCK VALIDATION: Har product ka live stock check karein
+    // 🔒 STRICT STOCK VALIDATION: Live stock verification
     for (const item of items) {
       const dbProduct = await prisma.product.findUnique({
         where: { id: item.productId || item.id },
@@ -110,10 +117,13 @@ export async function POST(req: Request) {
       }
     }
 
-    // Order number generate karein
     const orderNumber = `CB-${Date.now().toString().slice(-6)}`;
+    const parsedAmount = parseFloat(totalAmount) || 0;
 
-    // Stock deduction & Order creation inside transaction
+    const cookieStore = await cookies();
+    const sessionUserId = cookieStore.get("customer_id")?.value || null;
+
+    // Stock deduction, Address creation, and Order placement inside transaction
     const newOrder = await prisma.$transaction(async (tx) => {
       // 1. Stock kam karein
       for (const item of items) {
@@ -127,27 +137,50 @@ export async function POST(req: Request) {
         });
       }
 
-      // 2. Order create karein
+      // 2. Address record create karein (Required by Order model relation)
+      const createdAddress = await tx.address.create({
+        data: {
+          fullName: customerDetails?.name || "Direct Customer",
+          phone: customerDetails?.phone || "0000000000",
+          street: customerDetails?.address || "Direct Storefront Checkout",
+          city: customerDetails?.city || "Local",
+          state: customerDetails?.state || "State",
+          pincode: customerDetails?.pincode || "000000",
+          userId: sessionUserId,
+        },
+      });
+
+      // 3. Schema-compliant Order create karein
       return await tx.order.create({
         data: {
           orderNumber,
-          totalAmount: parseFloat(totalAmount),
-          paymentMethod: paymentMethod || "ONLINE",
+          totalAmount: parsedAmount,
           paymentStatus: "PENDING",
-          orderStatus: "CONFIRMED",
-          shippingAddress: customerDetails?.address || "Direct Order",
-          customerPhone: customerDetails?.phone || "",
-          customerName: customerDetails?.name || "Shopper",
+          orderStatus: "PAID",
+          addressId: createdAddress.id,
+          userId: sessionUserId,
+          payments: {
+            create: {
+              gateway: paymentMethod || "ONLINE",
+              gatewayTxnId: `TXN_${Date.now()}_${Math.random().toString(36).slice(-4)}`,
+              amount: parsedAmount,
+              status: "COMPLETED",
+            },
+          },
           items: {
-            create: items.map((i) => ({
+            create: items.map((i: any) => ({
               productId: i.productId || i.id,
               quantity: i.quantity || 1,
-              price: parseFloat(i.price),
+              price: parseFloat(i.price) || 0,
+              selectedSize: i.selectedSize || null,
+              selectedColor: i.selectedColor || null,
             })),
           },
         },
         include: {
           items: true,
+          address: true,
+          payments: true,
         },
       });
     });
