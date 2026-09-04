@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Menu,
   Search,
@@ -14,6 +15,7 @@ import {
   CreditCard,
   Star,
   Plus,
+  Check,
   Flame,
   MessageCircle,
   Home,
@@ -21,22 +23,40 @@ import {
   Package,
   User,
   ArrowRight,
+  X,
 } from "lucide-react";
 
-// Fallback Categories
-const DEFAULT_CATEGORIES = [
-  { name: "Gadgets", icon: "🎧" },
-  { name: "Home", icon: "🏠" },
-  { name: "Kitchen", icon: "🍳" },
-  { name: "Car Access.", icon: "🚗" },
-  { name: "Beauty", icon: "💄" },
-  { name: "Toys", icon: "🧸" },
-  { name: "Smart Home", icon: "💡" },
-  { name: "More", icon: "•••" },
+interface CategoryItem {
+  id?: string;
+  name: string;
+  slug?: string;
+  icon?: string | null;
+}
+
+interface ProductItem {
+  id: string;
+  slug: string;
+  title: string;
+  price: number;
+  mrp: number;
+  discount: string;
+  rating: number;
+  reviews: string;
+  image: string;
+}
+
+const DEFAULT_CATEGORIES: CategoryItem[] = [
+  { name: "Kitchen", icon: "🍳", slug: "kitchen" },
+  { name: "Floor Wiper", icon: "🧹", slug: "floor-wiper" },
+  { name: "Wall Hook", icon: "🪝", slug: "wall-hook" },
+  { name: "Roti Mat", icon: "🫓", slug: "roti-mat" },
+  { name: "Dishwash Scrub", icon: "🧽", slug: "dishwash-scrub" },
+  { name: "Oven Gloves", icon: "🧤", slug: "oven-gloves" },
+  { name: "Cloth Rope", icon: "🧺", slug: "cloth-drying-rope" },
+  { name: "Gadgets", icon: "🎧", slug: "gadgets" },
 ];
 
-// Fallback Best Sellers
-const DEFAULT_PRODUCTS = [
+const DEFAULT_PRODUCTS: ProductItem[] = [
   {
     id: "m10-earbuds",
     slug: "m10-earbuds",
@@ -59,67 +79,90 @@ const DEFAULT_PRODUCTS = [
     reviews: "862",
     image: "https://images.unsplash.com/photo-1570222094114-d054a817e56b?w=400&q=80",
   },
-  {
-    id: "rgb-led-strip",
-    slug: "rgb-led-strip",
-    title: "Smart LED Strip Light USB Powered",
-    price: 299,
-    mrp: 699,
-    discount: "57% OFF",
-    rating: 4.5,
-    reviews: "796",
-    image: "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=400&q=80",
-  },
-  {
-    id: "car-vacuum",
-    slug: "car-vacuum",
-    title: "Car Vacuum Cleaner High Power",
-    price: 899,
-    mrp: 1999,
-    discount: "55% OFF",
-    rating: 4.4,
-    reviews: "624",
-    image: "https://images.unsplash.com/photo-1558317374-067fb5f30001?w=400&q=80",
-  },
 ];
 
 export default function HomePage() {
-  const [timeLeft, setTimeLeft] = useState({ hours: 8, minutes: 36, seconds: 45 });
-  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
-  const [products, setProducts] = useState(DEFAULT_PRODUCTS);
-  const [cartCount, setCartCount] = useState(1);
+  const router = useRouter();
 
-  // Live Database Fetch with Zero Break Risk
+  const [timeLeft, setTimeLeft] = useState({ hours: 8, minutes: 36, seconds: 45 });
+  const [categories, setCategories] = useState<CategoryItem[]>(DEFAULT_CATEGORIES);
+  const [products, setProducts] = useState<ProductItem[]>(DEFAULT_PRODUCTS);
+  const [cartCount, setCartCount] = useState(0);
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const [addedItemIds, setAddedItemIds] = useState<string[]>([]);
+  const [pincode, setPincode] = useState("302020");
+  const [isPincodeModalOpen, setIsPincodeModalOpen] = useState(false);
+  const [tempPincode, setTempPincode] = useState("");
+
+  // Customer Authentication State
+  const [currentUser, setCurrentUser] = useState<{ name?: string; email?: string } | null>(null);
+
+  const syncCustomerAuth = () => {
+    try {
+      const stored = localStorage.getItem("cb_customer") || localStorage.getItem("cb_user");
+      if (stored) {
+        setCurrentUser(JSON.parse(stored));
+      } else {
+        setCurrentUser(null);
+      }
+    } catch {
+      setCurrentUser(null);
+    }
+  };
+
+  const syncCartCount = () => {
+    try {
+      const savedCart = localStorage.getItem("cb_cart");
+      if (savedCart) {
+        const parsed = JSON.parse(savedCart);
+        if (Array.isArray(parsed)) {
+          const count = parsed.reduce(
+            (sum: number, item: { quantity?: number }) => sum + (item.quantity || 1),
+            0
+          );
+          setCartCount(count);
+          return;
+        }
+      }
+      setCartCount(0);
+    } catch {
+      setCartCount(0);
+    }
+  };
+
   useEffect(() => {
+    syncCartCount();
+    syncCustomerAuth();
+
+    const savedPin = localStorage.getItem("cb_pincode");
+    if (savedPin) setPincode(savedPin);
+
     async function loadStoreData() {
       try {
         const res = await fetch("/api/storefront/home");
         const data = await res.json();
         if (data.success) {
-          if (data.categories && data.categories.length > 0) {
-            setCategories(data.categories);
-          }
-          if (data.products && data.products.length > 0) {
-            setProducts(data.products);
-          }
+          if (data.categories?.length > 0) setCategories(data.categories);
+          if (data.products?.length > 0) setProducts(data.products);
         }
       } catch (err) {
-        console.error("Using fallback local data", err);
+        console.error("Using fallback data", err);
       }
     }
     loadStoreData();
 
-    // Local cart count sync
-    try {
-      const savedCart = localStorage.getItem("cb_cart");
-      if (savedCart) {
-        const parsed = JSON.parse(savedCart);
-        if (Array.isArray(parsed)) setCartCount(parsed.length);
-      }
-    } catch {}
+    window.addEventListener("storage", syncCartCount);
+    window.addEventListener("storage", syncCustomerAuth);
+    window.addEventListener("customer-auth-changed", syncCustomerAuth);
+
+    return () => {
+      window.removeEventListener("storage", syncCartCount);
+      window.removeEventListener("storage", syncCustomerAuth);
+      window.removeEventListener("customer-auth-changed", syncCustomerAuth);
+    };
   }, []);
 
-  // Timer countdown
   useEffect(() => {
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
@@ -132,42 +175,98 @@ export default function HomePage() {
     return () => clearInterval(timer);
   }, []);
 
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      router.push(`/shop?q=${encodeURIComponent(searchQuery.trim())}`);
+    }
+  };
+
+  const handleQuickAdd = (product: ProductItem) => {
+    try {
+      const existing = localStorage.getItem("cb_cart");
+      let cart = existing ? JSON.parse(existing) : [];
+      if (!Array.isArray(cart)) cart = [];
+
+      const index = cart.findIndex((i: { productId: string }) => i.productId === product.id);
+
+      if (index > -1) {
+        cart[index].quantity += 1;
+      } else {
+        cart.push({
+          productId: product.id,
+          slug: product.slug,
+          title: product.title,
+          price: product.price,
+          originalPrice: product.mrp,
+          image: product.image,
+          quantity: 1,
+          selectedSize: null,
+          selectedColor: null,
+        });
+      }
+
+      localStorage.setItem("cb_cart", JSON.stringify(cart));
+      syncCartCount();
+
+      setAddedItemIds((prev) => [...prev, product.id]);
+      setTimeout(() => {
+        setAddedItemIds((prev) => prev.filter((id) => id !== product.id));
+      }, 1500);
+    } catch (e) {
+      console.error("Error adding to cart", e);
+    }
+  };
+
+  const handleSavePincode = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (tempPincode.length === 6) {
+      setPincode(tempPincode);
+      localStorage.setItem("cb_pincode", tempPincode);
+      setIsPincodeModalOpen(false);
+      setTempPincode("");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] pb-24 md:pb-12 text-slate-900 font-sans">
-      {/* 1. TOP NAVBAR */}
+      {/* Header */}
       <header className="sticky top-0 z-50 bg-white border-b border-slate-200 px-4 sm:px-8 py-3 shadow-xs">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <button className="md:hidden p-1 hover:bg-slate-100 rounded-lg text-slate-700">
-              <Menu className="w-5 h-5" />
-            </button>
             <Link href="/" className="text-xl sm:text-2xl font-black tracking-tight text-slate-950">
               Catch<span className="text-emerald-600">Buddy</span>
             </Link>
           </div>
 
-          {/* Search Bar (Desktop) */}
-          <div className="hidden md:flex flex-1 max-w-lg mx-8 relative">
+          <form onSubmit={handleSearchSubmit} className="hidden md:flex flex-1 max-w-lg mx-8 relative">
             <input
               type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search gadgets, home utilities, electronics..."
               className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-full text-xs font-semibold focus:outline-emerald-600"
             />
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          </div>
+            <button type="submit" className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+              <Search className="w-4 h-4" />
+            </button>
+          </form>
 
-          {/* Desktop Right Links */}
           <div className="flex items-center gap-4 sm:gap-6">
             <Link href="/orders" className="hidden md:inline-flex text-xs font-bold text-slate-700 hover:text-emerald-600">
               My Orders
             </Link>
-            <Link href="/login" className="hidden md:inline-flex text-xs font-bold text-slate-700 hover:text-emerald-600">
-              Account
+            
+            {/* Dynamic Customer Desktop Link */}
+            <Link
+              href={currentUser ? "/account" : "/login"}
+              className="hidden md:inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-emerald-600"
+            >
+              <User className="w-4 h-4 text-emerald-600" />
+              <span>{currentUser ? currentUser.name?.split(" ")[0] || "Account" : "Account"}</span>
             </Link>
-            <button className="md:hidden p-1 text-slate-700 hover:bg-slate-100 rounded-lg">
-              <Search className="w-5 h-5" />
-            </button>
-            <Link href="/cart" className="relative p-1 text-slate-700 hover:bg-slate-100 rounded-lg">
+
+            <Link href="/cart" className="relative p-1.5 text-slate-700 hover:bg-slate-100 rounded-lg">
               <ShoppingBag className="w-5 h-5" />
               {cartCount > 0 && (
                 <span className="absolute -top-1 -right-1 bg-emerald-600 text-white text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center">
@@ -177,19 +276,40 @@ export default function HomePage() {
             </Link>
           </div>
         </div>
+
+        <form onSubmit={handleSearchSubmit} className="md:hidden mt-2 relative">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search gadgets, home utilities..."
+            className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-emerald-600"
+          />
+          <button type="submit" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+            <Search className="w-3.5 h-3.5" />
+          </button>
+        </form>
       </header>
 
-      {/* 2. PINCODE DELIVERY STRIP */}
+      {/* Pincode Ribbon */}
       <div className="bg-emerald-50/70 border-b border-emerald-100 px-4 sm:px-8 py-2">
-        <div className="max-w-7xl mx-auto flex items-center gap-1.5 text-xs font-bold text-slate-700">
-          <MapPin className="w-3.5 h-3.5 text-emerald-600" />
-          <span>Delivering to: <strong className="text-slate-950">302020</strong></span>
-          <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <button
+            onClick={() => setIsPincodeModalOpen(true)}
+            className="flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-emerald-800 transition cursor-pointer"
+          >
+            <MapPin className="w-3.5 h-3.5 text-emerald-600" />
+            <span>
+              Delivering to: <strong className="text-slate-950 underline decoration-dotted">{pincode}</strong>
+            </span>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+          </button>
+          <span className="text-[10px] font-bold text-emerald-700 hidden sm:inline">Free Express Delivery</span>
         </div>
       </div>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-8 space-y-6 sm:space-y-8 mt-4">
-        {/* 3. HERO BANNER */}
+        {/* Banner Section */}
         <section>
           <div className="bg-[#0F172A] text-white rounded-3xl p-6 sm:p-10 relative overflow-hidden shadow-md flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="max-w-2xl">
@@ -228,7 +348,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* 4. TRUST BADGES STRIP */}
+        {/* Value Badges */}
         <section className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px] font-bold text-slate-700">
           <div className="bg-white p-3.5 rounded-2xl border border-slate-200 flex items-center justify-center gap-2.5 shadow-2xs">
             <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
@@ -248,31 +368,33 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* 5. TOP CATEGORIES */}
+        {/* Top Categories - Connected with Admin Panel */}
         <section>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-base font-black text-slate-950">Top Categories</h2>
-            <Link href="/categories" className="text-xs font-bold text-emerald-600 hover:underline">
+            <Link href="/shop" className="text-xs font-bold text-emerald-600 hover:underline">
               View all
             </Link>
           </div>
-          <div className="grid grid-cols-4 sm:grid-cols-8 gap-3 text-center">
+          <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-3 text-center">
             {categories.map((cat, idx) => (
               <Link
-                key={idx}
-                href={`/shop?category=${cat.name}`}
-                className="flex flex-col items-center gap-1.5 group p-2 bg-white rounded-2xl border border-slate-100 shadow-2xs hover:border-emerald-300 transition"
+                key={cat.id || idx}
+                href={`/shop?category=${encodeURIComponent(cat.slug || cat.name.toLowerCase().replace(/\s+/g, "-"))}`}
+                className="flex flex-col items-center gap-1.5 group p-2.5 bg-white rounded-2xl border border-slate-100 shadow-2xs hover:border-emerald-300 hover:shadow-xs transition"
               >
-                <div className="w-12 h-12 flex items-center justify-center text-2xl">
+                <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center text-2xl group-hover:scale-110 transition duration-200">
                   {cat.icon || "📦"}
                 </div>
-                <span className="text-[11px] font-bold text-slate-700">{cat.name}</span>
+                <span className="text-[11px] font-bold text-slate-700 line-clamp-1 group-hover:text-emerald-700">
+                  {cat.name}
+                </span>
               </Link>
             ))}
           </div>
         </section>
 
-        {/* 6. DEAL OF THE DAY */}
+        {/* Deal of the Day Banner */}
         <section>
           <div className="bg-emerald-50/70 border border-emerald-200 rounded-3xl p-5 sm:p-6">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
@@ -294,41 +416,43 @@ export default function HomePage() {
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl p-4 flex flex-col sm:flex-row gap-4 border border-slate-200">
-              <img
-                src={products[0]?.image || "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=300&q=80"}
-                alt="Deal item"
-                className="w-full sm:w-36 h-36 rounded-xl object-cover"
-              />
-              <div className="flex-1 flex flex-col justify-between">
-                <div>
-                  <h3 className="text-sm font-black text-slate-900">
-                    {products[0]?.title || "Special Deal Product"}
-                  </h3>
-                  <div className="flex items-center gap-1.5 text-xs text-slate-500 font-bold mt-1">
-                    <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                    <span>{products[0]?.rating || 4.9} ({products[0]?.reviews || 250} reviews)</span>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between mt-4">
+            {products[0] && (
+              <div className="bg-white rounded-2xl p-4 flex flex-col sm:flex-row gap-4 border border-slate-200">
+                <img
+                  src={products[0].image}
+                  alt={products[0].title}
+                  className="w-full sm:w-36 h-36 rounded-xl object-cover"
+                />
+                <div className="flex-1 flex flex-col justify-between">
                   <div>
-                    <span className="text-lg font-black text-emerald-700">₹{products[0]?.price || 299}</span>{" "}
-                    <span className="text-xs line-through text-slate-400 ml-1">₹{products[0]?.mrp || 699}</span>
-                    <span className="text-xs font-bold text-emerald-600 ml-2">{products[0]?.discount || "50% OFF"}</span>
+                    <h3 className="text-sm font-black text-slate-900 line-clamp-2">
+                      {products[0].title}
+                    </h3>
+                    <div className="flex items-center gap-1.5 text-xs text-slate-500 font-bold mt-1">
+                      <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                      <span>{products[0].rating} ({products[0].reviews} reviews)</span>
+                    </div>
                   </div>
-                  <Link
-                    href={`/product/${products[0]?.slug || products[0]?.id}`}
-                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl transition"
-                  >
-                    Shop Now
-                  </Link>
+                  <div className="flex items-center justify-between mt-4">
+                    <div>
+                      <span className="text-lg font-black text-emerald-700">₹{products[0].price}</span>{" "}
+                      <span className="text-xs line-through text-slate-400 ml-1">₹{products[0].mrp}</span>
+                      <span className="text-xs font-bold text-emerald-600 ml-2">{products[0].discount}</span>
+                    </div>
+                    <Link
+                      href={`/product/${products[0].slug || products[0].id}`}
+                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl transition"
+                    >
+                      Shop Now
+                    </Link>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         </section>
 
-        {/* 7. BEST SELLING PRODUCTS (2 Cols Mobile, 4 Cols Desktop) */}
+        {/* Best Selling Products Grid */}
         <section>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-base font-black text-slate-950">Best Selling Products</h2>
@@ -338,47 +462,56 @@ export default function HomePage() {
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
-            {products.map((item) => (
-              <div
-                key={item.id}
-                className="bg-white rounded-2xl border border-slate-200 p-3 sm:p-4 shadow-2xs flex flex-col justify-between hover:shadow-sm transition"
-              >
-                <div>
-                  <Link href={`/product/${item.slug || item.id}`} className="block aspect-square bg-slate-50 rounded-xl overflow-hidden mb-2 relative">
-                    <img src={item.image} alt={item.title} className="w-full h-full object-cover" />
-                    <span className="absolute top-2 right-2 bg-emerald-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded-md">
-                      {item.discount}
-                    </span>
-                  </Link>
-                  <Link href={`/product/${item.slug || item.id}`}>
-                    <h3 className="text-xs sm:text-sm font-bold text-slate-900 line-clamp-2 leading-snug hover:text-emerald-600">
-                      {item.title}
-                    </h3>
-                  </Link>
-                  <div className="flex items-center gap-1 text-[10px] text-slate-500 font-bold mt-1">
-                    <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                    <span>{item.rating} ({item.reviews})</span>
-                  </div>
-                </div>
+            {products.map((item) => {
+              const isAdded = addedItemIds.includes(item.id);
 
-                <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between">
+              return (
+                <div
+                  key={item.id}
+                  className="bg-white rounded-2xl border border-slate-200 p-3 sm:p-4 shadow-2xs flex flex-col justify-between hover:shadow-sm transition"
+                >
                   <div>
-                    <div className="text-xs sm:text-sm font-black text-slate-950">₹{item.price}</div>
-                    <div className="text-[10px] text-slate-400 line-through">₹{item.mrp}</div>
+                    <Link href={`/product/${item.slug || item.id}`} className="block aspect-square bg-slate-50 rounded-xl overflow-hidden mb-2 relative">
+                      <img src={item.image} alt={item.title} className="w-full h-full object-cover" />
+                      <span className="absolute top-2 right-2 bg-emerald-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded-md">
+                        {item.discount}
+                      </span>
+                    </Link>
+                    <Link href={`/product/${item.slug || item.id}`}>
+                      <h3 className="text-xs sm:text-sm font-bold text-slate-900 line-clamp-2 leading-snug hover:text-emerald-600">
+                        {item.title}
+                      </h3>
+                    </Link>
+                    <div className="flex items-center gap-1 text-[10px] text-slate-500 font-bold mt-1">
+                      <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
+                      <span>{item.rating} ({item.reviews})</span>
+                    </div>
                   </div>
-                  <Link
-                    href={`/product/${item.slug || item.id}`}
-                    className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-black flex items-center gap-1 cursor-pointer transition"
-                  >
-                    <Plus className="w-3 h-3" /> Add
-                  </Link>
+
+                  <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between">
+                    <div>
+                      <div className="text-xs sm:text-sm font-black text-slate-950">₹{item.price}</div>
+                      <div className="text-[10px] text-slate-400 line-through">₹{item.mrp}</div>
+                    </div>
+                    <button
+                      onClick={() => handleQuickAdd(item)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-1 cursor-pointer transition active:scale-95 ${
+                        isAdded
+                          ? "bg-emerald-600 text-white"
+                          : "bg-emerald-50 hover:bg-emerald-100 text-emerald-700"
+                      }`}
+                    >
+                      {isAdded ? <Check className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
+                      {isAdded ? "Added" : "Add"}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
 
-        {/* 8. PREPAID BENEFITS & COUPONS */}
+        {/* Benefits & Coupon Banner */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-[#064E3B] text-white rounded-3xl p-6 text-center flex flex-col justify-center">
             <h3 className="text-xs font-black uppercase tracking-widest text-emerald-300 mb-4">
@@ -420,7 +553,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* 9. WHATSAPP REASSURANCE */}
+        {/* WhatsApp Support Bar */}
         <section>
           <a
             href="https://wa.me/919999999999"
@@ -437,29 +570,75 @@ export default function HomePage() {
         </section>
       </main>
 
-      {/* 10. MOBILE BOTTOM NAVIGATION (Hidden on Desktop) */}
+      {/* Mobile Bottom Navigation */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-200 py-2.5 px-6 flex items-center justify-between shadow-lg">
         <Link href="/" className="flex flex-col items-center gap-0.5 text-emerald-600">
           <Home className="w-4 h-4" />
           <span className="text-[10px] font-black">Home</span>
         </Link>
-        <Link href="/categories" className="flex flex-col items-center gap-0.5 text-slate-500 hover:text-slate-900">
+        <Link href="/shop" className="flex flex-col items-center gap-0.5 text-slate-500 hover:text-slate-900">
           <LayoutGrid className="w-4 h-4" />
-          <span className="text-[10px] font-bold">Categories</span>
+          <span className="text-[10px] font-bold">Shop</span>
         </Link>
-        <Link href="/search" className="flex flex-col items-center gap-0.5 text-slate-500 hover:text-slate-900">
+        <button
+          onClick={() => {
+            const input = document.querySelector('input[type="text"]') as HTMLInputElement;
+            input?.focus();
+          }}
+          className="flex flex-col items-center gap-0.5 text-slate-500 hover:text-slate-900"
+        >
           <Search className="w-4 h-4" />
           <span className="text-[10px] font-bold">Search</span>
-        </Link>
+        </button>
         <Link href="/orders" className="flex flex-col items-center gap-0.5 text-slate-500 hover:text-slate-900">
           <Package className="w-4 h-4" />
           <span className="text-[10px] font-bold">Orders</span>
         </Link>
-        <Link href="/login" className="flex flex-col items-center gap-0.5 text-slate-500 hover:text-slate-900">
+        
+        {/* Dynamic Mobile Account Link */}
+        <Link
+          href={currentUser ? "/account" : "/login"}
+          className="flex flex-col items-center gap-0.5 text-slate-500 hover:text-slate-900"
+        >
           <User className="w-4 h-4" />
-          <span className="text-[10px] font-bold">Account</span>
+          <span className="text-[10px] font-bold">{currentUser ? "Account" : "Login"}</span>
         </Link>
       </nav>
+
+      {/* Pincode Selector Modal */}
+      {isPincodeModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full space-y-4 shadow-xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-black text-slate-900">Enter Delivery Pincode</h3>
+              <button
+                onClick={() => setIsPincodeModalOpen(false)}
+                className="p-1 hover:bg-slate-100 rounded-lg text-slate-400"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-500">Check delivery speed & availability for your location.</p>
+            <form onSubmit={handleSavePincode} className="space-y-3">
+              <input
+                type="text"
+                maxLength={6}
+                value={tempPincode}
+                onChange={(e) => setTempPincode(e.target.value.replace(/\D/g, ""))}
+                placeholder="Enter 6-digit Pincode (e.g. 302020)"
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-600"
+              />
+              <button
+                type="submit"
+                disabled={tempPincode.length !== 6}
+                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-black transition"
+              >
+                Apply Pincode
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

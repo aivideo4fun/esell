@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { 
   User, 
   Package, 
@@ -19,10 +20,12 @@ import {
   Phone,
   Lock,
   CheckCircle2,
-  Plus
+  Plus,
+  ArrowLeft
 } from "lucide-react";
 
 export default function CustomerAccountPage() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState("account");
   const [loading, setLoading] = useState(true);
 
@@ -30,9 +33,9 @@ export default function CustomerAccountPage() {
   const [saving, setSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [profileData, setProfileData] = useState({
-    name: "Jitendra Gawdiya",
-    email: "customer_1788325717546@catchbuddy.store",
-    phone: "07976152206",
+    name: "Customer",
+    email: "user@catchbuddy.com",
+    phone: "9876543210",
     isEmailVerified: true,
   });
 
@@ -64,20 +67,25 @@ export default function CustomerAccountPage() {
       try {
         setLoading(true);
 
-        // 1. Sync from local storage
-        const storedCustomer = localStorage.getItem("cb_customer");
+        // 1. Sync from local storage (Checks both cb_customer and cb_user)
+        const storedCustomer = localStorage.getItem("cb_customer") || localStorage.getItem("cb_user");
         let activeEmail = profileData.email;
+
         if (storedCustomer) {
           try {
             const parsed = JSON.parse(storedCustomer);
-            if (parsed.email) activeEmail = parsed.email;
+            activeEmail = parsed.email || activeEmail;
             setProfileData((prev) => ({
               ...prev,
               name: parsed.name || prev.name,
               email: parsed.email || prev.email,
-              phone: parsed.phone || prev.phone,
+              phone: parsed.mobile || parsed.phone || prev.phone,
             }));
           } catch {}
+        } else {
+          // If no logged in customer found, redirect to login
+          router.push("/login");
+          return;
         }
 
         // 2. Fetch live customer profile from DB
@@ -87,9 +95,9 @@ export default function CustomerAccountPage() {
           if (dataProf.success && dataProf.customer) {
             activeEmail = dataProf.customer.email || activeEmail;
             setProfileData({
-              name: dataProf.customer.name || "Jitendra Gawdiya",
-              email: dataProf.customer.email || "customer_1788325717546@catchbuddy.store",
-              phone: dataProf.customer.phone || "07976152206",
+              name: dataProf.customer.name || profileData.name,
+              email: dataProf.customer.email || profileData.email,
+              phone: dataProf.customer.phone || profileData.phone,
               isEmailVerified: true,
             });
           }
@@ -116,7 +124,7 @@ export default function CustomerAccountPage() {
           if (dataAddr.success) setAddresses(dataAddr.addresses || []);
         } catch {}
 
-        // 6. Fetch Customer Support Tickets directly from tickets API
+        // 6. Fetch Customer Support Tickets
         if (activeEmail) {
           try {
             const resTickets = await fetch(`/api/admin/tickets?email=${encodeURIComponent(activeEmail)}`, { cache: "no-store" });
@@ -133,7 +141,7 @@ export default function CustomerAccountPage() {
     };
 
     void loadAllCustomerData();
-  }, []);
+  }, [router]);
 
   const handleProfileSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -148,7 +156,9 @@ export default function CustomerAccountPage() {
       const data = await res.json();
       if (data.success || res.ok) {
         localStorage.setItem("cb_customer", JSON.stringify(profileData));
+        localStorage.setItem("cb_user", JSON.stringify(profileData));
         window.dispatchEvent(new Event("customer-auth-changed"));
+        window.dispatchEvent(new Event("storage"));
 
         setSavedSuccess(true);
         setTimeout(() => setSavedSuccess(false), 3000);
@@ -187,12 +197,13 @@ export default function CustomerAccountPage() {
 
   const handleLogout = () => {
     localStorage.removeItem("cb_customer");
+    localStorage.removeItem("cb_user");
     document.cookie = "customer_id=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;";
     window.dispatchEvent(new Event("customer-auth-changed"));
+    window.dispatchEvent(new Event("storage"));
     window.location.href = "/";
   };
 
-  // Real Support Ticket Submission
   const handleSupportSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmittingSupport(true);
@@ -225,10 +236,10 @@ export default function CustomerAccountPage() {
 
   const menuItems = [
     { id: "account", label: "My Account", icon: User },
-    { id: "orders", label: "My Orders", icon: Package, count: orders.length || 9 },
+    { id: "orders", label: "My Orders", icon: Package, count: orders.length || undefined },
     { id: "track", label: "Track Order", icon: Truck },
     { id: "wishlist", label: "Wishlist", icon: Heart, link: "/wishlist" },
-    { id: "addresses", label: "Saved Addresses", icon: MapPin, count: addresses.length },
+    { id: "addresses", label: "Saved Addresses", icon: MapPin, count: addresses.length || undefined },
     { id: "coupons", label: "Coupons", icon: TicketPercent, count: coupons.length || 1 },
     { id: "notifications", label: "Notifications", icon: Bell },
     { id: "support", label: "Help & Support", icon: HelpCircle, count: tickets.length > 0 ? tickets.length : undefined },
@@ -244,14 +255,20 @@ export default function CustomerAccountPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-6xl mx-auto">
+    <div className="min-h-screen bg-slate-50 py-8 px-4 sm:px-6 lg:px-8 font-sans">
+      <div className="max-w-6xl mx-auto space-y-4">
+        
+        {/* Back Link */}
+        <Link
+          href="/"
+          className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition"
+        >
+          <ArrowLeft className="w-4 h-4" /> Back to Store
+        </Link>
+
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-start">
-          
           {/* Left Navigation Sidebar */}
           <div className="md:col-span-1 bg-white rounded-3xl border border-slate-200 p-4 shadow-xs space-y-4">
-            
-            {/* Sidebar Profile Card: Name + Mobile Number */}
             <div className="p-3 border-b border-slate-100 flex items-center gap-3">
               <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-base shrink-0">
                 {profileData.name.slice(0, 2).toUpperCase()}
@@ -328,7 +345,6 @@ export default function CustomerAccountPage() {
 
           {/* Right Main Content Area */}
           <div className="md:col-span-3 bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-xs min-h-[480px]">
-            
             {/* 1. PERSONAL INFORMATION TAB */}
             {activeTab === "account" && (
               <div className="space-y-6">
@@ -340,7 +356,6 @@ export default function CustomerAccountPage() {
                 </div>
 
                 <form onSubmit={handleProfileSave} className="space-y-5 max-w-xl">
-                  {/* Full Name */}
                   <div>
                     <label className="text-xs font-bold text-slate-700 block mb-1.5">
                       Full Name
@@ -360,7 +375,6 @@ export default function CustomerAccountPage() {
                     </div>
                   </div>
 
-                  {/* Locked & Verified Email */}
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <label className="text-xs font-bold text-slate-700">
@@ -384,12 +398,8 @@ export default function CustomerAccountPage() {
                         <Lock className="w-4 h-4 text-slate-400" />
                       </div>
                     </div>
-                    <p className="text-[11px] text-slate-400 font-medium mt-1">
-                      Email is permanently locked after verification for security reasons.
-                    </p>
                   </div>
 
-                  {/* Phone Number */}
                   <div>
                     <label className="text-xs font-bold text-slate-700 block mb-1.5">
                       Phone Number
@@ -409,7 +419,6 @@ export default function CustomerAccountPage() {
                     </div>
                   </div>
 
-                  {/* Save Button */}
                   <div className="flex items-center gap-3 pt-2">
                     <button
                       type="submit"
@@ -428,7 +437,7 @@ export default function CustomerAccountPage() {
               </div>
             )}
 
-            {/* 2. Orders Tab */}
+            {/* 2. ORDERS TAB */}
             {activeTab === "orders" && (
               <div className="space-y-6">
                 <div>
@@ -463,7 +472,7 @@ export default function CustomerAccountPage() {
               </div>
             )}
 
-            {/* 3. Track Order Tab */}
+            {/* 3. TRACK ORDER TAB */}
             {activeTab === "track" && (
               <div className="space-y-6 max-w-xl">
                 <div>
@@ -489,7 +498,7 @@ export default function CustomerAccountPage() {
               </div>
             )}
 
-            {/* 4. Saved Addresses Tab */}
+            {/* 4. SAVED ADDRESSES TAB */}
             {activeTab === "addresses" && (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
@@ -581,7 +590,7 @@ export default function CustomerAccountPage() {
               </div>
             )}
 
-            {/* 5. Coupons Tab */}
+            {/* 5. COUPONS TAB */}
             {activeTab === "coupons" && (
               <div className="space-y-6">
                 <div>
@@ -631,7 +640,7 @@ export default function CustomerAccountPage() {
               </div>
             )}
 
-            {/* 6. Notifications Tab */}
+            {/* 6. NOTIFICATIONS TAB */}
             {activeTab === "notifications" && (
               <div className="space-y-6">
                 <div>
@@ -648,7 +657,7 @@ export default function CustomerAccountPage() {
               </div>
             )}
 
-            {/* 7. REAL-TIME HELP & SUPPORT DESK */}
+            {/* 7. SUPPORT TAB */}
             {activeTab === "support" && (
               <div className="space-y-6">
                 <div>
@@ -658,7 +667,6 @@ export default function CustomerAccountPage() {
                   </p>
                 </div>
 
-                {/* Instant Generated Ticket Banner */}
                 {createdTicket && (
                   <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-3xl space-y-2">
                     <div className="flex items-center justify-between">
@@ -670,13 +678,12 @@ export default function CustomerAccountPage() {
                       </span>
                     </div>
                     <p className="text-xs text-emerald-800">
-                      Aapka request admin panel me forward ho chuka hai. Please note down your Ticket Number:{" "}
+                      Aapka request admin panel me forward ho chuka hai. Ticket Number:{" "}
                       <strong className="font-mono font-black">{createdTicket.ticketNumber}</strong>.
                     </p>
                   </div>
                 )}
 
-                {/* Ticket Submission Form */}
                 <form onSubmit={handleSupportSubmit} className="space-y-4 max-w-xl">
                   <div>
                     <label className="text-xs font-bold text-slate-700 block mb-1.5">
@@ -715,7 +722,6 @@ export default function CustomerAccountPage() {
                   </button>
                 </form>
 
-                {/* Real-time Customer Ticket History */}
                 <div className="pt-6 border-t border-slate-100 space-y-3">
                   <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
                     Your Support Tickets ({tickets.length})
@@ -767,9 +773,7 @@ export default function CustomerAccountPage() {
                 </div>
               </div>
             )}
-
           </div>
-
         </div>
       </div>
     </div>
