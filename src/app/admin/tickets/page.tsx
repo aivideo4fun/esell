@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   LifeBuoy,
   Search,
@@ -8,10 +8,7 @@ import {
   Loader2,
   Trash2,
   Phone,
-  Mail,
-  Clock,
-  CheckCircle2,
-  AlertTriangle
+  Mail
 } from "lucide-react";
 
 interface SupportTicketItem {
@@ -21,6 +18,7 @@ interface SupportTicketItem {
   message: string;
   status: string;
   priority: string;
+  customerName?: string | null;
   customerPhone?: string | null;
   customerEmail?: string | null;
   createdAt: string;
@@ -35,12 +33,12 @@ export default function AdminTicketsPage() {
   const [tickets, setTickets] = useState<SupportTicketItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("ALL"); // ALL, OPEN, IN_PROGRESS, RESOLVED
+  const [filter, setFilter] = useState("ALL");
 
-  const fetchTickets = async () => {
+  const fetchTickets = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/admin/tickets");
+      const res = await fetch("/api/admin/tickets", { cache: "no-store" });
       const data = await res.json();
       if (data.success) {
         setTickets(data.tickets || []);
@@ -50,11 +48,11 @@ export default function AdminTicketsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchTickets();
-  }, []);
+    void fetchTickets();
+  }, [fetchTickets]);
 
   const handleUpdateStatus = async (id: string, status: string) => {
     try {
@@ -115,13 +113,13 @@ export default function AdminTicketsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-slate-950">Customer Support Desk</h1>
+          <h1 className="text-2xl font-black text-slate-950">Active Support Tickets</h1>
           <p className="text-xs text-slate-600 font-semibold mt-1">
-            Resolve delivery inquiries, return requests, and track WhatsApp support tickets.
+            Manage customer inquiries submitted from Contact Support desk.
           </p>
         </div>
         <button
-          onClick={fetchTickets}
+          onClick={() => void fetchTickets()}
           className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 text-slate-700 text-xs font-bold rounded-xl hover:bg-slate-50 transition cursor-pointer"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
@@ -212,6 +210,7 @@ export default function AdminTicketsPage() {
                 {filteredTickets.map((t) => {
                   const phone = t.customerPhone || t.user?.phone || "—";
                   const email = t.customerEmail || t.user?.email || "—";
+                  const name = t.customerName || t.user?.name || "Shopper";
 
                   return (
                     <tr key={t.id} className="hover:bg-slate-50/60">
@@ -225,7 +224,7 @@ export default function AdminTicketsPage() {
                       </td>
 
                       <td className="p-4 align-top space-y-0.5">
-                        <p className="font-black text-slate-900">{t.user?.name || "Shopper"}</p>
+                        <p className="font-black text-slate-900">{name}</p>
                         <p className="flex items-center gap-1 text-[11px] text-slate-600">
                           <Phone className="w-3 h-3 text-slate-400" /> {phone}
                         </p>
@@ -254,7 +253,7 @@ export default function AdminTicketsPage() {
                       <td className="p-4 align-top">
                         <select
                           value={t.status}
-                          onChange={(e) => handleUpdateStatus(t.id, e.target.value)}
+                          onChange={(e) => void handleUpdateStatus(t.id, e.target.value)}
                           className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase border focus:outline-none cursor-pointer ${
                             t.status === "OPEN"
                               ? "bg-rose-50 text-rose-700 border-rose-200"
@@ -272,7 +271,7 @@ export default function AdminTicketsPage() {
 
                       <td className="p-4 align-top text-right">
                         <button
-                          onClick={() => handleDelete(t.id)}
+                          onClick={() => void handleDelete(t.id)}
                           className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
                           title="Delete Ticket"
                         >

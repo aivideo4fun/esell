@@ -3,14 +3,15 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-// 1. GET: Tickets fetch karein (Admin & Customer Support)
+// 1. GET: Fetch all real tickets with counts
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const email = searchParams.get("email");
+    const role = searchParams.get("role");
 
     let whereClause: any = {};
-    if (email) {
+    if (role !== "admin" && email) {
       whereClause.customerEmail = email;
     }
 
@@ -24,18 +25,50 @@ export async function GET(req: Request) {
       orderBy: { createdAt: "desc" },
     });
 
-    return NextResponse.json({ success: true, tickets });
+    const allCount = tickets.length;
+    const openCount = tickets.filter((t: any) => t.status === "OPEN").length;
+    const inProgressCount = tickets.filter((t: any) => t.status === "IN_PROGRESS").length;
+    const resolvedCount = tickets.filter((t: any) => t.status === "RESOLVED").length;
+
+    // Parse clean names and clean messages for all consumers
+    const formatted = tickets.map((t: any) => {
+      const nameMatch = t.message?.match(/\[Customer:\s*([^\]]+)\]/);
+      const extractedName = nameMatch ? nameMatch[1] : null;
+      const cleanMessage = t.message?.replace(/\[Customer:\s*[^\]]+\]\n?/, "") || t.message;
+      return {
+        ...t,
+        customerName: extractedName || t.customerName || t.user?.name || "Customer",
+        customerPhone: t.customerPhone || t.user?.phone || "",
+        customerEmail: t.customerEmail || t.user?.email || "customer@catchbuddy.store",
+        cleanMessage,
+      };
+    });
+
+    return NextResponse.json({
+      success: true,
+      tickets: formatted,
+      counts: {
+        all: allCount,
+        open: openCount,
+        inProgress: inProgressCount,
+        resolved: resolvedCount,
+      },
+    });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Failed to load tickets";
     return NextResponse.json({ success: false, error: msg, tickets: [] }, { status: 500 });
   }
 }
 
-// 2. POST: Create Ticket (Exact Schema Matching - No 'customerName' argument error)
+// 2. POST: Create Ticket (No 'customerName' argument error)
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { name, email, phone, subject, message } = body;
+    const { customerName, name, customerEmail, email, customerPhone, phone, subject, message } = body;
+
+    const actualName = customerName || name || "Customer";
+    const actualEmail = customerEmail || email;
+    const actualPhone = customerPhone || phone;
 
     if (!message) {
       return NextResponse.json(
@@ -47,11 +80,10 @@ export async function POST(req: Request) {
     const count = await (prisma as any).supportTicket.count();
     const ticketNumber = `TCK-${108 + count + 1}`;
 
-    // Agar user database mein exist karta hai toh userId connect kar do
     let userId: string | undefined = undefined;
-    if (email) {
+    if (actualEmail) {
       const existingUser = await (prisma as any).user.findUnique({
-        where: { email },
+        where: { email: actualEmail },
         select: { id: true },
       });
       if (existingUser) {
@@ -59,18 +91,17 @@ export async function POST(req: Request) {
       }
     }
 
-    // Name ko message ke start mein cleanly save karte hain agar schema mein direct column na ho
-    const formattedMessage = name ? `[Customer: ${name}]\n${message}` : message;
+    const formattedMessage = `[Customer: ${actualName}]\n${message}`;
 
     const newTicket = await (prisma as any).supportTicket.create({
       data: {
         ticketNumber,
-        subject: subject || "Order Inquiry",
+        subject: subject || "Order Issue",
         message: formattedMessage,
         priority: subject?.toLowerCase().includes("urgent") || subject?.toLowerCase().includes("track") ? "HIGH" : "MEDIUM",
         status: "OPEN",
-        customerEmail: email || null,
-        customerPhone: phone || null,
+        customerEmail: actualEmail || null,
+        customerPhone: actualPhone || null,
         ...(userId ? { userId } : {}),
       },
       include: {
@@ -83,7 +114,13 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       message: "Ticket created successfully",
-      ticket: newTicket,
+      ticket: {
+        ...newTicket,
+        customerName: actualName,
+        customerPhone: actualPhone,
+        customerEmail: actualEmail,
+        cleanMessage: message,
+      },
     });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Failed to create ticket";
@@ -95,39 +132,21 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   try {
     const body = await req.json();
-    const { id, status } = body;
+    const { ticketId, id, status } = body;
+    const targetId = ticketId || id;
 
-    if (!id || !status) {
+    if (!targetId || !status) {
       return NextResponse.json({ success: false, error: "Invalid parameters" }, { status: 400 });
     }
 
     const updated = await (prisma as any).supportTicket.update({
-      where: { id },
+      where: { id: targetId },
       data: { status },
     });
 
     return NextResponse.json({ success: true, ticket: updated });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Failed to update status";
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
-  }
-}
-
-// 4. DELETE: Delete Ticket
-export async function DELETE(req: Request) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const id = searchParams.get("id");
-
-    if (!id) {
-      return NextResponse.json({ success: false, error: "Ticket ID required" }, { status: 400 });
-    }
-
-    await (prisma as any).supportTicket.delete({ where: { id } });
-
-    return NextResponse.json({ success: true, message: "Ticket deleted" });
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to delete ticket";
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }

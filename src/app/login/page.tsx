@@ -29,11 +29,11 @@ export default function LoginPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    // User profile object create karein
+    // User profile object create karein (sirf real user input, koi dummy number nahi)
     const customerUser = {
       name: formData.name.trim() || formData.email.split("@")[0],
       email: formData.email.trim(),
-      phone: formData.phone.trim() || "+91 9876543210",
+      phone: formData.phone.trim(),
     };
 
     // Client storage aur custom event trigger karein
@@ -90,7 +90,7 @@ export default function LoginPage() {
                   <input
                     required
                     type="text"
-                    placeholder="e.g. Rahul Sharma"
+                    placeholder="Rahul Sharma"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:outline-emerald-600"
@@ -114,22 +114,19 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {isSignUp && (
-              <div>
-                <label className="text-xs font-bold text-gray-700">Phone Number</label>
-                <div className="relative mt-1">
-                  <Phone className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
-                  <input
-                    required
-                    type="tel"
-                    placeholder="9876543210"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:outline-emerald-600"
-                  />
-                </div>
+            <div>
+              <label className="text-xs font-bold text-gray-700">Phone Number</label>
+              <div className="relative mt-1">
+                <Phone className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
+                <input
+                  type="tel"
+                  placeholder="Enter your mobile number"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:outline-emerald-600"
+                />
               </div>
-            )}
+            </div>
 
             <div>
               <label className="text-xs font-bold text-gray-700">Password</label>

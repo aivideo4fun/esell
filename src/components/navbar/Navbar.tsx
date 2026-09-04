@@ -39,18 +39,18 @@ export default function Navbar() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Sync customer details from localStorage or API
+  // Sync customer details
   useEffect(() => {
     const syncCustomer = () => {
       const stored = localStorage.getItem("cb_customer");
       if (stored) {
         try {
-          setCustomer(JSON.parse(stored));
+          const parsed = JSON.parse(stored);
+          setCustomer(parsed);
         } catch {
           setCustomer(null);
         }
       } else {
-        // Fallback check cookie / backend session
         fetch("/api/auth/customer")
           .then((res) => res.json())
           .then((data) => {
@@ -69,7 +69,6 @@ export default function Navbar() {
     return () => window.removeEventListener("customer-auth-changed", syncCustomer);
   }, []);
 
-  // Close dropdown when clicked outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -166,35 +165,34 @@ export default function Navbar() {
             )}
           </Link>
 
-          {/* User Account / Login Button */}
+          {/* User Account / Login Button (ONLY CUSTOMER NAME, NO MOBILE NUMBER) */}
           {customer ? (
             <div className="relative" ref={dropdownRef}>
               <button
                 type="button"
                 onClick={() => setDropdownOpen(!dropdownOpen)}
-                className="flex items-center gap-2 text-left bg-[#f0fdf4] border border-[#bbf7d0] hover:bg-[#dcfce7] px-3 py-1.5 rounded-2xl transition cursor-pointer shadow-2xs"
+                className="flex items-center gap-2 text-left bg-[#f0fdf4] border border-[#bbf7d0] hover:bg-[#dcfce7] px-3.5 py-2 rounded-2xl transition cursor-pointer shadow-2xs"
               >
                 <div className="w-7 h-7 rounded-full bg-[#16a34a] text-white flex items-center justify-center text-xs font-black shrink-0">
-                  {customer.name ? customer.name.charAt(0).toUpperCase() : "U"}
+                  {(customer.name || customer.email || "U").charAt(0).toUpperCase()}
                 </div>
-                <div className="flex flex-col leading-tight">
-                  <span className="text-xs font-black text-[#0f172a] max-w-[120px] truncate">
-                    {customer.name || "Customer"}
-                  </span>
-                  <span className="text-[10px] font-bold text-[#16a34a] max-w-[120px] truncate">
-                    {customer.phone || customer.email || "Verified"}
-                  </span>
-                </div>
+                <span className="text-xs font-black text-[#0f172a] max-w-[130px] truncate">
+                  {customer.name || customer.email?.split("@")[0] || "Customer"}
+                </span>
               </button>
 
               {dropdownOpen && (
                 <div className="absolute right-0 mt-2 w-60 bg-white border border-gray-200 rounded-2xl shadow-xl p-2 z-50 text-xs animate-in fade-in slide-in-from-top-2 duration-150">
                   {/* Account Header */}
                   <div className="p-3 border-b border-gray-100 bg-emerald-50/50 rounded-xl mb-1">
-                    <p className="font-black text-[#0f172a] truncate">{customer.name || "Customer"}</p>
-                    <p className="text-[11px] text-emerald-700 font-bold flex items-center gap-1 mt-0.5">
-                      <Phone className="w-3 h-3 text-emerald-600" /> {customer.phone || "No phone added"}
+                    <p className="font-black text-[#0f172a] truncate">
+                      {customer.name || customer.email?.split("@")[0] || "Customer"}
                     </p>
+                    {customer.phone && (
+                      <p className="text-[11px] text-emerald-700 font-bold flex items-center gap-1 mt-0.5">
+                        <Phone className="w-3 h-3 text-emerald-600" /> {customer.phone}
+                      </p>
+                    )}
                   </div>
 
                   {/* Customer Portal Items */}

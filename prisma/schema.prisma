@@ -248,20 +248,22 @@ model Banner {
 
 // 15. Customer Support Tickets
 model SupportTicket {
-  id          String   @id @default(cuid())
-  ticketNumber String  @unique
-  subject     String
-  message     String
-  status      String   @default("OPEN") // OPEN, IN_PROGRESS, RESOLVED, CLOSED
-  priority    String   @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+  id            String   @id @default(cuid())
+  ticketNumber  String   @unique
+  subject       String
+  message       String
+  status        String   @default("OPEN") // OPEN, IN_PROGRESS, RESOLVED, CLOSED
+  priority      String   @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
   
-  userId      String?
-  user        User?    @relation(fields: [userId], references: [id])
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id])
+  customerName  String?
   customerPhone String?
   customerEmail String?
+  adminReply    String?
   
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 // 16. Security & Audit Activity Logs
@@ -314,3 +316,4 @@ model SupplierPayout {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }
+
