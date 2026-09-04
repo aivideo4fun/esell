@@ -5,11 +5,9 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    // Wo sabhi orders jo PENDING status me hain aur complete nahi hue
-    const pendingOrders = await prisma.order.findMany({
+    const orders = await prisma.order.findMany({
       where: {
-        paymentStatus: "PENDING",
-        orderStatus: "PENDING",
+        paymentStatus: { in: ["PENDING", "FAILED"] },
       },
       include: {
         items: {
@@ -19,64 +17,68 @@ export async function GET() {
             },
           },
         },
+        address: true, // ✅ Correct relation from your schema
+        user: {
+          select: { name: true, email: true, phone: true },
+        },
+        customer: {
+          select: { name: true, email: true, phone: true },
+        },
       },
       orderBy: { createdAt: "desc" },
     });
 
-    const carts = pendingOrders.map((order) => {
-      let productTitles = order.items.map((i) => i.product?.title).filter(Boolean).join(", ");
-      
-      // Fallback to shipping address where summary was stored during tracking
+    const formattedCarts = orders.map((order) => {
+      let productTitles = order.items
+        ?.map((item) => item.product?.title)
+        .filter(Boolean)
+        .join(", ");
+
+      // Fallback: order.shippingAddress ke badle order.address use kiya gaya hai
       if (!productTitles) {
-        productTitles = order.shippingAddress || "Pending Cart Items";
+        productTitles =
+          order.address?.street ||
+          order.address?.city ||
+          "Pending Cart Items";
       }
 
       const diffMs = Date.now() - new Date(order.createdAt).getTime();
-      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-      const diffMinutes = Math.floor(diffMs / (1000 * 60));
-      
-      const timeAgo =
-        diffHours > 0 
-          ? `${diffHours} hour${diffHours > 1 ? "s" : ""} ago` 
-          : `${diffMinutes > 0 ? diffMinutes : 1} min ago`;
+      const hoursAgo = Math.floor(diffMs / (1000 * 60 * 60));
+
+      const customerName =
+        order.user?.name ||
+        order.customer?.name ||
+        order.address?.fullName ||
+        "Shopper";
+
+      const customerPhone =
+        order.user?.phone ||
+        order.customer?.phone ||
+        order.address?.phone ||
+        "";
+
+      const customerEmail =
+        order.user?.email ||
+        order.customer?.email ||
+        "";
 
       return {
         id: order.id,
-        customerName: order.customerName || "Guest Shopper",
-        customerEmail: "Contact on WhatsApp",
-        customerPhone: order.customerPhone || "N/A",
-        productsSummary: productTitles,
-        cartValue: order.totalAmount,
-        timeAgo,
-        isReminded: Boolean((order as any).isReminded),
+        orderNumber: order.orderNumber || order.id.slice(-6).toUpperCase(),
+        customerName,
+        customerPhone,
+        customerEmail,
+        productTitles,
+        totalAmount: order.totalAmount,
+        createdAt: order.createdAt,
+        hoursAgo: hoursAgo > 0 ? `${hoursAgo}h ago` : "Just now",
+        status: order.orderStatus,
       };
     });
 
-    return NextResponse.json({ success: true, carts });
+    return NextResponse.json({ success: true, carts: formattedCarts });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Failed to load carts";
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
-  }
-}
-
-export async function POST(req: Request) {
-  try {
-    const { orderId } = await req.json();
-
-    if (!orderId) {
-      return NextResponse.json({ success: false, error: "Order ID required" }, { status: 400 });
-    }
-
-    await prisma.order.update({
-      where: { id: orderId },
-      data: {
-        ...({ isReminded: true } as any),
-      },
-    });
-
-    return NextResponse.json({ success: true, message: "Reminder status updated" });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Failed";
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    const msg = error instanceof Error ? error.message : "Failed to load abandoned carts";
+    return NextResponse.json({ success: false, error: msg, carts: [] }, { status: 500 });
   }
 }
