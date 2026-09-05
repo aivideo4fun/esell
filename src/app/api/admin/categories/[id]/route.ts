@@ -5,28 +5,53 @@ export const dynamic = "force-dynamic";
 
 export async function DELETE(
   req: Request,
-  { params }: { params: { id: string } }
+  props: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
-    const { id } = params;
+    const resolvedParams = await props.params;
+    const id = resolvedParams?.id;
 
-    // Unlink products
+    if (!id) {
+      return NextResponse.json({ success: false, error: "ID missing" }, { status: 400 });
+    }
+
+    // 1. Unlink child categories (parentId)
     try {
-      await prisma.product.updateMany({
+      await (prisma.category as any).updateMany({
+        where: { parentId: id },
+        data: { parentId: null },
+      });
+    } catch {}
+
+    // 2. Unlink products (Foreign key constraint solve)
+    try {
+      await (prisma.product as any).updateMany({
         where: { categoryId: id },
         data: { categoryId: null },
       });
     } catch {}
 
-    // Delete category
+    // 3. Disconnect many-to-many relation
+    try {
+      await prisma.category.update({
+        where: { id },
+        data: { products: { set: [] } },
+      });
+    } catch {}
+
+    // 4. Delete the category
     await prisma.category.delete({
       where: { id },
     });
 
-    return NextResponse.json({ success: true, message: "Category deleted" });
+    return NextResponse.json({
+      success: true,
+      message: "Category deleted successfully",
+    });
   } catch (error: any) {
+    console.error("Delete Category DB Error:", error);
     return NextResponse.json(
-      { success: false, error: error.message || "Error deleting category" },
+      { success: false, error: error?.message || "Failed to delete" },
       { status: 500 }
     );
   }

@@ -1,91 +1,87 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-// 1. GET: Real customer data from Database
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const cookieStore = await cookies();
-    const customerId = cookieStore.get("customer_id")?.value;
+    const { searchParams } = new URL(req.url);
+    const phone = searchParams.get("phone");
+    const email = searchParams.get("email");
 
-    let customer = null;
+    let user = null;
 
-    if (customerId) {
-      customer = await (prisma as any).user.findUnique({
-        where: { id: customerId },
-        select: { id: true, name: true, email: true, phone: true },
+    if (phone || email) {
+      user = await prisma.user.findFirst({
+        where: {
+          OR: [
+            ...(phone ? [{ phone: phone.replace(/\D/g, "").slice(-10) }] : []),
+            ...(email ? [{ email }] : []),
+          ],
+        },
       });
     }
 
-    // Fallback: Agar cookie nahi hai, latest customer uthayein (ya jo email session me ho)
-    if (!customer) {
-      customer = await (prisma as any).user.findFirst({
-        orderBy: { createdAt: "desc" },
-        select: { id: true, name: true, email: true, phone: true },
-      });
-    }
-
-    if (!customer) {
-      return NextResponse.json({ success: false, error: "No customer found" }, { status: 404 });
+    if (!user) {
+      return NextResponse.json({ success: false, message: "User not found" }, { status: 404 });
     }
 
     return NextResponse.json({
       success: true,
       customer: {
-        id: customer.id,
-        name: customer.name || customer.email.split("@")[0],
-        email: customer.email,
-        phone: customer.phone || "", // Real phone only, NO dummy fallback
+        id: user.id,
+        name: user.name,
+        email: user.email?.includes("@catchbuddy.store") ? "" : user.email,
+        phone: user.phone,
       },
     });
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to load profile";
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
 
-// 2. PUT: Save actual Name and Phone to Database
 export async function PUT(req: Request) {
   try {
     const body = await req.json();
-    const { name, phone } = body;
+    const { name, phone, email } = body;
 
-    const cookieStore = await cookies();
-    const customerId = cookieStore.get("customer_id")?.value;
-
-    let targetUser = null;
-    if (customerId) {
-      targetUser = await (prisma as any).user.findUnique({ where: { id: customerId } });
-    }
-    if (!targetUser) {
-      targetUser = await (prisma as any).user.findFirst({ orderBy: { createdAt: "desc" } });
+    if (!phone) {
+      return NextResponse.json({ success: false, error: "Phone number required" }, { status: 400 });
     }
 
-    if (!targetUser) {
-      return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
-    }
+    const cleanPhone = phone.replace(/\D/g, "").slice(-10);
 
-    const updated = await (prisma as any).user.update({
-      where: { id: targetUser.id },
+    const updatedUser = await prisma.user.updateMany({
+      where: {
+        OR: [
+          { phone: cleanPhone },
+          { phone: `0${cleanPhone}` },
+        ],
+      },
       data: {
-        name: name?.trim(),
-        phone: phone?.trim(),
+        name: name?.trim() || undefined,
+        ...(email && email.trim() && !email.includes("@catchbuddy.store")
+          ? { email: email.trim().toLowerCase() }
+          : {}),
       },
     });
+
+    if (email && email.trim()) {
+      await prisma.customer.updateMany({
+        where: { phone: cleanPhone },
+        data: {
+          name: name?.trim() || undefined,
+          email: email.trim().toLowerCase(),
+        },
+      });
+    }
 
     return NextResponse.json({
       success: true,
-      customer: {
-        id: updated.id,
-        name: updated.name,
-        email: updated.email,
-        phone: updated.phone || "",
-      },
+      message: "Profile updated successfully",
+      customer: { name, phone: cleanPhone, email },
     });
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to update profile";
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

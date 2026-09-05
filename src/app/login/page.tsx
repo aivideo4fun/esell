@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -16,19 +16,24 @@ import {
   KeyRound,
   CheckCircle2,
 } from "lucide-react";
+import {
+  RecaptchaVerifier,
+  signInWithPhoneNumber,
+  ConfirmationResult,
+} from "firebase/auth";
+import { auth } from "@/lib/firebase";
 
 export default function AuthPage() {
   const router = useRouter();
 
-  // Mode: "LOGIN" or "SIGNUP"
   const [mode, setMode] = useState<"LOGIN" | "SIGNUP">("LOGIN");
   const [signupStep, setSignupStep] = useState<"DETAILS" | "OTP">("DETAILS");
 
-  // Login Form Field
+  // Login Form
   const [loginIdentifier, setLoginIdentifier] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
 
-  // Signup Form Fields (5 Fields)
+  // Signup Form
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [mobile, setMobile] = useState("");
@@ -45,34 +50,45 @@ export default function AuthPage() {
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
-  // 1. DIRECT LOGIN WITH TEST USER BYPASS
+  const confirmationResultRef = useRef<ConfirmationResult | null>(null);
+  const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && auth && !recaptchaVerifierRef.current) {
+      try {
+        recaptchaVerifierRef.current = new RecaptchaVerifier(
+          auth,
+          "recaptcha-container",
+          {
+            size: "invisible",
+            callback: () => {},
+            "expired-callback": () => {
+              setErrorMsg("Security check expired. Please try again.");
+            },
+          }
+        );
+      } catch (err) {
+        console.warn("reCAPTCHA init:", err);
+      }
+    }
+
+    return () => {
+      if (recaptchaVerifierRef.current) {
+        try {
+          recaptchaVerifierRef.current.clear();
+        } catch {}
+        recaptchaVerifierRef.current = null;
+      }
+    };
+  }, []);
+
+  // Real Database Login -> ALWAYS Redirect to Home ("/")
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
     setLoading(true);
 
     const cleanIdentifier = loginIdentifier.trim();
-
-    // Default Test User Check
-    if (
-      (cleanIdentifier === "9876543210" || cleanIdentifier === "user@catchbuddy.com") &&
-      loginPassword === "admin123"
-    ) {
-      const demoUser = {
-        id: "usr_test_catchbuddy_01",
-        name: "Test Customer",
-        email: "user@catchbuddy.com",
-        mobile: "9876543210",
-        role: "CUSTOMER",
-      };
-      if (typeof window !== "undefined") {
-        localStorage.setItem("cb_user", JSON.stringify(demoUser));
-        window.dispatchEvent(new Event("storage"));
-      }
-      setLoading(false);
-      router.push("/");
-      return;
-    }
 
     try {
       const res = await fetch("/api/auth/customer", {
@@ -86,39 +102,33 @@ export default function AuthPage() {
       });
 
       const data = await res.json();
-      if (data.success) {
+      if (data.success && data.user) {
         if (typeof window !== "undefined") {
-          localStorage.setItem(
-            "cb_user",
-            JSON.stringify(data.user || { identifier: cleanIdentifier, name: "Customer" })
-          );
+          localStorage.setItem("cb_user", JSON.stringify(data.user));
+          localStorage.setItem("cb_customer", JSON.stringify(data.user));
+          window.dispatchEvent(new Event("customer-auth-changed"));
           window.dispatchEvent(new Event("storage"));
         }
+
+        // Always redirect to Home
         router.push("/");
       } else {
         setErrorMsg(data.error || "Invalid Email/Mobile or Password");
       }
     } catch {
-      // Fallback for offline dev
-      if (cleanIdentifier && loginPassword.length >= 4) {
-        localStorage.setItem(
-          "cb_user",
-          JSON.stringify({ identifier: cleanIdentifier, name: "Customer" })
-        );
-        window.dispatchEvent(new Event("storage"));
-        router.push("/");
-      } else {
-        setErrorMsg("Unable to sign in. Use test user: 9876543210 / admin123");
-      }
+      setErrorMsg("Unable to connect to server. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
-  // 2. SIGNUP - SEND OTP AFTER VALIDATING 5 FIELDS
+  // Real SMS OTP Trigger
   const handleSendSignupOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
+    setSuccessMsg("");
+
+    const cleanMobile = mobile.replace(/\D/g, "");
 
     if (!fullName.trim()) {
       setErrorMsg("Please enter your full name");
@@ -128,7 +138,7 @@ export default function AuthPage() {
       setErrorMsg("Please enter a valid email address");
       return;
     }
-    if (mobile.replace(/\D/g, "").length !== 10) {
+    if (cleanMobile.length !== 10) {
       setErrorMsg("Please enter a valid 10-digit mobile number");
       return;
     }
@@ -137,12 +147,39 @@ export default function AuthPage() {
       return;
     }
     if (password !== confirmPassword) {
-      setErrorMsg("Passwords do not match. Please re-enter.");
+      setErrorMsg("Passwords do not match");
       return;
     }
 
     setLoading(true);
 
+    if (auth) {
+      try {
+        if (!recaptchaVerifierRef.current) {
+          recaptchaVerifierRef.current = new RecaptchaVerifier(
+            auth,
+            "recaptcha-container",
+            { size: "invisible" }
+          );
+        }
+
+        const appVerifier = recaptchaVerifierRef.current;
+        const formattedNumber = "+91" + cleanMobile;
+
+        const confirmation = await signInWithPhoneNumber(auth, formattedNumber, appVerifier);
+        confirmationResultRef.current = confirmation;
+
+        setSignupStep("OTP");
+        setSuccessMsg(`OTP sent successfully to +91 ${cleanMobile}`);
+        setLoading(false);
+        return;
+      } catch (fbErr: any) {
+        console.error("Firebase SMS error:", fbErr);
+        setErrorMsg(fbErr.message || "Failed to send verification SMS");
+      }
+    }
+
+    // Backend SMS fallback
     try {
       const res = await fetch("/api/auth/customer", {
         method: "POST",
@@ -151,37 +188,46 @@ export default function AuthPage() {
           action: "SEND_SIGNUP_OTP",
           name: fullName.trim(),
           email: email.trim().toLowerCase(),
-          mobile: mobile.trim(),
+          mobile: cleanMobile,
         }),
       });
-
       const data = await res.json();
       if (data.success) {
         setSignupStep("OTP");
-        setSuccessMsg(`OTP sent to +91 ${mobile}`);
+        setSuccessMsg(`Verification code sent to +91 ${cleanMobile}`);
       } else {
-        setSignupStep("OTP");
-        setSuccessMsg("Enter OTP: 123456 (Dev OTP)");
+        setErrorMsg(data.error || "Failed to send OTP code");
       }
     } catch {
-      setSignupStep("OTP");
-      setSuccessMsg("Enter OTP: 123456 (Demo OTP)");
+      setErrorMsg("Server error sending OTP");
     } finally {
       setLoading(false);
     }
   };
 
-  // 3. SIGNUP - VERIFY OTP & COMPLETE REGISTRATION
+  // Verify Real OTP & Complete Registration -> ALWAYS Redirect to Home ("/")
   const handleVerifyOtpAndRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
+    const cleanMobile = mobile.replace(/\D/g, "");
 
     if (otp.trim().length < 4) {
-      setErrorMsg("Please enter a valid OTP");
+      setErrorMsg("Please enter the verification code");
       return;
     }
 
     setLoading(true);
+
+    if (confirmationResultRef.current) {
+      try {
+        await confirmationResultRef.current.confirm(otp.trim());
+      } catch (fbErr: any) {
+        console.error("OTP verify error:", fbErr);
+        setErrorMsg("Invalid or expired OTP code. Please check and retry.");
+        setLoading(false);
+        return;
+      }
+    }
 
     try {
       const res = await fetch("/api/auth/customer", {
@@ -191,43 +237,26 @@ export default function AuthPage() {
           action: "VERIFY_AND_REGISTER",
           name: fullName.trim(),
           email: email.trim().toLowerCase(),
-          mobile: mobile.trim(),
+          mobile: cleanMobile,
           password: password,
           otp: otp.trim(),
         }),
       });
 
       const data = await res.json();
-      if (data.success) {
-        localStorage.setItem(
-          "cb_user",
-          JSON.stringify(data.user || { name: fullName, email, mobile })
-        );
+      if (data.success && data.user) {
+        localStorage.setItem("cb_user", JSON.stringify(data.user));
+        localStorage.setItem("cb_customer", JSON.stringify(data.user));
+        window.dispatchEvent(new Event("customer-auth-changed"));
         window.dispatchEvent(new Event("storage"));
+
+        // Always redirect to Home
         router.push("/");
       } else {
-        if (otp === "123456") {
-          localStorage.setItem(
-            "cb_user",
-            JSON.stringify({ name: fullName, email, mobile })
-          );
-          window.dispatchEvent(new Event("storage"));
-          router.push("/");
-        } else {
-          setErrorMsg(data.error || "Incorrect OTP. Please check and retry.");
-        }
+        setErrorMsg(data.error || "Failed to complete account registration");
       }
     } catch {
-      if (otp === "123456") {
-        localStorage.setItem(
-          "cb_user",
-          JSON.stringify({ name: fullName, email, mobile })
-        );
-        window.dispatchEvent(new Event("storage"));
-        router.push("/");
-      } else {
-        setErrorMsg("Failed to verify OTP. Try again.");
-      }
+      setErrorMsg("Connection error during registration");
     } finally {
       setLoading(false);
     }
@@ -245,9 +274,9 @@ export default function AuthPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center px-4 py-10 font-sans">
+      <div id="recaptcha-container"></div>
+
       <div className="w-full max-w-md bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-8 space-y-6">
-        
-        {/* Back Link */}
         <Link
           href="/"
           className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition"
@@ -255,7 +284,6 @@ export default function AuthPage() {
           <ArrowLeft className="w-4 h-4" /> Back to Store
         </Link>
 
-        {/* Title */}
         <div>
           <h1 className="text-2xl font-black text-slate-900">
             {mode === "LOGIN"
@@ -273,7 +301,6 @@ export default function AuthPage() {
           </p>
         </div>
 
-        {/* Alert Notifications */}
         {errorMsg && (
           <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl">
             {errorMsg}
@@ -287,7 +314,7 @@ export default function AuthPage() {
           </div>
         )}
 
-        {/* ================= 1. LOGIN MODE ================= */}
+        {/* 1. REAL LOGIN */}
         {mode === "LOGIN" && (
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-1.5">
@@ -298,7 +325,7 @@ export default function AuthPage() {
                   required
                   value={loginIdentifier}
                   onChange={(e) => setLoginIdentifier(e.target.value)}
-                  placeholder="e.g. 9876543210 or user@email.com"
+                  placeholder="Enter email or mobile number"
                   className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-emerald-600"
                 />
                 <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -335,18 +362,7 @@ export default function AuthPage() {
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Sign In"}
             </button>
 
-            <div className="p-3 bg-slate-100/70 border border-slate-200 rounded-xl text-center">
-              <span className="text-[11px] font-bold text-slate-500 block mb-1">Testing Demo Credentials:</span>
-              <span className="text-xs font-mono font-bold text-slate-800 bg-white px-2 py-0.5 rounded border border-slate-200">
-                9876543210
-              </span>
-              <span className="text-slate-400 mx-1.5">/</span>
-              <span className="text-xs font-mono font-bold text-slate-800 bg-white px-2 py-0.5 rounded border border-slate-200">
-                admin123
-              </span>
-            </div>
-
-            <div className="text-center pt-1">
+            <div className="text-center pt-2">
               <p className="text-xs text-slate-500 font-medium">
                 Don&apos;t have an account?{" "}
                 <button
@@ -361,7 +377,7 @@ export default function AuthPage() {
           </form>
         )}
 
-        {/* ================= 2. SIGNUP MODE (5 Fields) ================= */}
+        {/* 2. REAL SIGNUP */}
         {mode === "SIGNUP" && (
           <>
             {signupStep === "DETAILS" ? (
@@ -374,7 +390,7 @@ export default function AuthPage() {
                       required
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
-                      placeholder="e.g. Rahul Sharma"
+                      placeholder="Enter full name"
                       className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-emerald-600"
                     />
                     <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -389,7 +405,7 @@ export default function AuthPage() {
                       required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="e.g. rahul@example.com"
+                      placeholder="Enter real email address"
                       className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-emerald-600"
                     />
                     <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -464,7 +480,7 @@ export default function AuthPage() {
                   {loading ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    "Verify with OTP & Register"
+                    "Send SMS OTP & Register"
                   )}
                 </button>
 
@@ -482,7 +498,6 @@ export default function AuthPage() {
                 </div>
               </form>
             ) : (
-              /* OTP VERIFICATION STEP */
               <form onSubmit={handleVerifyOtpAndRegister} className="space-y-4">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-700">Enter Verification Code</label>
@@ -531,7 +546,7 @@ export default function AuthPage() {
 
         <div className="pt-4 border-t border-slate-100 flex items-center justify-center gap-2 text-[11px] font-bold text-slate-400">
           <ShieldCheck className="w-4 h-4 text-emerald-600" />
-          <span>100% Secure & Encrypted Authentication</span>
+          <span>100% Secure &amp; Encrypted Authentication</span>
         </div>
       </div>
     </div>

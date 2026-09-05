@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  Menu,
   Search,
   ShoppingBag,
   MapPin,
@@ -24,6 +23,8 @@ import {
   User,
   ArrowRight,
   X,
+  Navigation,
+  Loader2,
 } from "lucide-react";
 
 interface CategoryItem {
@@ -91,9 +92,14 @@ export default function HomePage() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [addedItemIds, setAddedItemIds] = useState<string[]>([]);
-  const [pincode, setPincode] = useState("302020");
+  
+  // Location States
+  const [pincode, setPincode] = useState("341512");
+  const [city, setCity] = useState("Nagaur");
   const [isPincodeModalOpen, setIsPincodeModalOpen] = useState(false);
   const [tempPincode, setTempPincode] = useState("");
+  const [gpsLoading, setGpsLoading] = useState(false);
+  const [locationError, setLocationError] = useState("");
 
   // Customer Authentication State
   const [currentUser, setCurrentUser] = useState<{ name?: string; email?: string } | null>(null);
@@ -131,12 +137,31 @@ export default function HomePage() {
     }
   };
 
+  // Pincode to City helper
+  const resolveCityFromPincode = async (code: string) => {
+    try {
+      const res = await fetch(`/api/pincode?code=${code}`);
+      const data = await res.json();
+      if (data.success && data.city) {
+        setCity(data.city);
+        localStorage.setItem("cb_city", data.city);
+        localStorage.setItem("cb_pincode", code);
+      }
+    } catch {}
+  };
+
   useEffect(() => {
     syncCartCount();
     syncCustomerAuth();
 
-    const savedPin = localStorage.getItem("cb_pincode");
-    if (savedPin) setPincode(savedPin);
+    const savedPin = localStorage.getItem("cb_pincode") || "341512";
+    setPincode(savedPin);
+    const savedCity = localStorage.getItem("cb_city");
+    if (savedCity) {
+      setCity(savedCity);
+    } else {
+      resolveCityFromPincode(savedPin);
+    }
 
     async function loadStoreData() {
       try {
@@ -218,14 +243,77 @@ export default function HomePage() {
     }
   };
 
-  const handleSavePincode = (e: React.FormEvent) => {
+  // Manual Pincode submit
+  const handleSavePincode = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (tempPincode.length === 6) {
-      setPincode(tempPincode);
-      localStorage.setItem("cb_pincode", tempPincode);
-      setIsPincodeModalOpen(false);
-      setTempPincode("");
+    const cleanPin = tempPincode.replace(/\D/g, "").slice(0, 6);
+    if (cleanPin.length !== 6) {
+      setLocationError("Please enter a valid 6-digit pincode.");
+      return;
     }
+
+    try {
+      const res = await fetch(`/api/pincode?code=${cleanPin}`);
+      const data = await res.json();
+      if (data.success && data.city) {
+        setPincode(cleanPin);
+        setCity(data.city);
+        localStorage.setItem("cb_pincode", cleanPin);
+        localStorage.setItem("cb_city", data.city);
+        setIsPincodeModalOpen(false);
+        setTempPincode("");
+        setLocationError("");
+      } else {
+        setLocationError("Pincode not found. Please check.");
+      }
+    } catch {
+      setLocationError("Failed to verify pincode.");
+    }
+  };
+
+  // GPS Auto-Fetch
+  const handleUseGps = () => {
+    if (!navigator.geolocation) {
+      setLocationError("Geolocation is not supported by your browser.");
+      return;
+    }
+
+    setGpsLoading(true);
+    setLocationError("");
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const { latitude, longitude } = position.coords;
+          const res = await fetch(`/api/location/gps?lat=${latitude}&lng=${longitude}`);
+          const data = await res.json();
+
+          if (data.success && data.pincode) {
+            setPincode(data.pincode);
+            setCity(data.city);
+            localStorage.setItem("cb_pincode", data.pincode);
+            localStorage.setItem("cb_city", data.city);
+            setIsPincodeModalOpen(false);
+            setLocationError("");
+          } else {
+            setLocationError("Could not detect pincode from GPS. Please type it manually.");
+          }
+        } catch {
+          setLocationError("Failed to fetch GPS location.");
+        } finally {
+          setGpsLoading(false);
+        }
+      },
+      (err) => {
+        setGpsLoading(false);
+        if (err.code === err.PERMISSION_DENIED) {
+          setLocationError("Location permission denied. Please allow GPS in browser settings.");
+        } else {
+          setLocationError("GPS location request timed out.");
+        }
+      },
+      { timeout: 10000, enableHighAccuracy: true }
+    );
   };
 
   return (
@@ -257,7 +345,6 @@ export default function HomePage() {
               My Orders
             </Link>
             
-            {/* Dynamic Customer Desktop Link */}
             <Link
               href={currentUser ? "/account" : "/login"}
               className="hidden md:inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-emerald-600"
@@ -291,20 +378,34 @@ export default function HomePage() {
         </form>
       </header>
 
-      {/* Pincode Ribbon */}
+      {/* Pincode & City Delivery Ribbon with GPS */}
       <div className="bg-emerald-50/70 border-b border-emerald-100 px-4 sm:px-8 py-2">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <button
-            onClick={() => setIsPincodeModalOpen(true)}
-            className="flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-emerald-800 transition cursor-pointer"
+            onClick={() => {
+              setLocationError("");
+              setIsPincodeModalOpen(true);
+            }}
+            className="flex items-center gap-2 text-left group hover:opacity-85 transition cursor-pointer"
           >
-            <MapPin className="w-3.5 h-3.5 text-emerald-600" />
-            <span>
-              Delivering to: <strong className="text-slate-950 underline decoration-dotted">{pincode}</strong>
-            </span>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+            <MapPin className="w-4 h-4 text-emerald-600 shrink-0 self-start mt-0.5" />
+            <div className="flex flex-col leading-tight">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-slate-600 font-medium">Delivering to:</span>
+                <span className="text-xs font-black text-slate-950 font-mono tracking-tight underline decoration-dotted">
+                  {pincode}
+                </span>
+                <ChevronDown className="w-3 h-3 text-slate-400 group-hover:text-slate-700 transition" />
+              </div>
+              {/* Pincode ke theek niche city */}
+              <span className="text-[10px] font-bold text-emerald-700 line-clamp-1">
+                {city}
+              </span>
+            </div>
           </button>
-          <span className="text-[10px] font-bold text-emerald-700 hidden sm:inline">Free Express Delivery</span>
+          <span className="text-[10px] font-black text-emerald-700 hidden sm:flex items-center gap-1">
+            <Truck className="w-3.5 h-3.5" /> Free Express Delivery
+          </span>
         </div>
       </div>
 
@@ -368,7 +469,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Top Categories - Connected with Admin Panel */}
+        {/* Top Categories */}
         <section>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-base font-black text-slate-950">Top Categories</h2>
@@ -483,7 +584,7 @@ export default function HomePage() {
                       </h3>
                     </Link>
                     <div className="flex items-center gap-1 text-[10px] text-slate-500 font-bold mt-1">
-                      <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
+                      <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
                       <span>{item.rating} ({item.reviews})</span>
                     </div>
                   </div>
@@ -595,7 +696,6 @@ export default function HomePage() {
           <span className="text-[10px] font-bold">Orders</span>
         </Link>
         
-        {/* Dynamic Mobile Account Link */}
         <Link
           href={currentUser ? "/account" : "/login"}
           className="flex flex-col items-center gap-0.5 text-slate-500 hover:text-slate-900"
@@ -605,12 +705,17 @@ export default function HomePage() {
         </Link>
       </nav>
 
-      {/* Pincode Selector Modal */}
+      {/* Location / Pincode / GPS Modal */}
       {isPincodeModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 max-w-sm w-full space-y-4 shadow-xl">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full space-y-4 shadow-xl border border-slate-200">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-black text-slate-900">Enter Delivery Pincode</h3>
+              <div>
+                <h3 className="text-sm font-black text-slate-950">Choose Delivery Location</h3>
+                <p className="text-[11px] text-slate-500 font-medium">
+                  Fastest delivery is calculated for your area.
+                </p>
+              </div>
               <button
                 onClick={() => setIsPincodeModalOpen(false)}
                 className="p-1 hover:bg-slate-100 rounded-lg text-slate-400"
@@ -618,24 +723,55 @@ export default function HomePage() {
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <p className="text-xs text-slate-500">Check delivery speed & availability for your location.</p>
-            <form onSubmit={handleSavePincode} className="space-y-3">
+
+            {/* GPS Auto Detection Button */}
+            <button
+              type="button"
+              onClick={handleUseGps}
+              disabled={gpsLoading}
+              className="w-full py-2.5 px-3 bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50"
+            >
+              {gpsLoading ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+                  Detecting GPS location...
+                </>
+              ) : (
+                <>
+                  <Navigation className="w-3.5 h-3.5 text-emerald-600" />
+                  Use Current Location (GPS)
+                </>
+              )}
+            </button>
+
+            <div className="flex items-center gap-2 text-slate-300">
+              <div className="flex-1 h-px bg-slate-200" />
+              <span className="text-[10px] uppercase font-bold text-slate-400">or enter pincode</span>
+              <div className="flex-1 h-px bg-slate-200" />
+            </div>
+
+            {/* Manual Form */}
+            <form onSubmit={handleSavePincode} className="space-y-2.5">
               <input
                 type="text"
                 maxLength={6}
                 value={tempPincode}
                 onChange={(e) => setTempPincode(e.target.value.replace(/\D/g, ""))}
-                placeholder="Enter 6-digit Pincode (e.g. 302020)"
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-600"
+                placeholder="Enter 6-digit Pincode (e.g. 341512)"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-600"
               />
               <button
                 type="submit"
                 disabled={tempPincode.length !== 6}
-                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-black transition"
+                className="w-full py-2.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-50 text-white rounded-xl text-xs font-black transition cursor-pointer"
               >
                 Apply Pincode
               </button>
             </form>
+
+            {locationError && (
+              <p className="text-[11px] font-bold text-rose-600">{locationError}</p>
+            )}
           </div>
         </div>
       )}

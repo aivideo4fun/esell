@@ -18,6 +18,7 @@ import {
   Tag,
   Check,
   X,
+  MapPin,
 } from "lucide-react";
 
 interface CartItem {
@@ -32,10 +33,14 @@ interface CartItem {
   selectedColor?: string | null;
 }
 
-declare global {
-  interface Window {
-    Razorpay: any;
-  }
+interface SavedAddress {
+  id: string;
+  fullName: string;
+  phone: string;
+  street: string;
+  city: string;
+  state: string;
+  pincode: string;
 }
 
 export default function CartPage() {
@@ -50,8 +55,16 @@ export default function CartPage() {
   const [address, setAddress] = useState("");
   const [city, setCity] = useState("");
   const [pincode, setPincode] = useState("302020");
+  const [fetchingCity, setFetchingCity] = useState(false);
 
-  // Coupon state linked with /api/coupons/apply
+  // Saved Addresses State
+  const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<string | "NEW">("NEW");
+
+  // Customer identity
+  const [customerEmail, setCustomerEmail] = useState("");
+
+  // Coupon state
   const [couponCode, setCouponCode] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState<{
     code: string;
@@ -68,12 +81,10 @@ export default function CartPage() {
       const savedCart = localStorage.getItem("cb_cart");
       if (savedCart) {
         const parsed = JSON.parse(savedCart);
-        if (Array.isArray(parsed)) {
-          setCart(parsed);
-        }
+        if (Array.isArray(parsed)) setCart(parsed);
       }
 
-      // Check logged-in customer info to pre-fill address
+      // Check customer session
       const storedCustomer = localStorage.getItem("cb_customer") || localStorage.getItem("cb_user");
       if (storedCustomer) {
         try {
@@ -82,11 +93,19 @@ export default function CartPage() {
           if (parsedCustomer.phone || parsedCustomer.mobile) {
             setPhone(parsedCustomer.phone || parsedCustomer.mobile);
           }
+          if (parsedCustomer.email) {
+            setCustomerEmail(parsedCustomer.email);
+            fetchUserAddresses(parsedCustomer.email, parsedCustomer.phone || parsedCustomer.mobile);
+          }
         } catch {}
       }
 
       const savedPin = localStorage.getItem("cb_pincode");
-      if (savedPin) setPincode(savedPin);
+      if (savedPin) {
+        setPincode(savedPin);
+        const savedCity = localStorage.getItem("cb_city");
+        if (savedCity) setCity(savedCity);
+      }
     } catch (e) {
       console.error("Failed to load cart", e);
     } finally {
@@ -94,16 +113,77 @@ export default function CartPage() {
     }
   }, []);
 
+  // Fetch saved addresses and auto-fill default
+  const fetchUserAddresses = async (email?: string, phoneNum?: string) => {
+    try {
+      const query = email ? `email=${encodeURIComponent(email)}` : `phone=${encodeURIComponent(phoneNum || "")}`;
+      const res = await fetch(`/api/customer/addresses?${query}`);
+      const data = await res.json();
+
+      if (data.success && Array.isArray(data.addresses) && data.addresses.length > 0) {
+        setSavedAddresses(data.addresses);
+        const defaultAddr = data.addresses[0];
+        setSelectedAddressId(defaultAddr.id);
+        setName(defaultAddr.fullName);
+        setPhone(defaultAddr.phone);
+        setAddress(defaultAddr.street);
+        setCity(defaultAddr.city);
+        setPincode(defaultAddr.pincode);
+      }
+    } catch (err) {
+      console.error("Failed to fetch user addresses", err);
+    }
+  };
+
+  // Auto-fetch City & State from Pincode
+  const handlePincodeChange = async (val: string) => {
+    const cleanPin = val.replace(/\D/g, "").slice(0, 6);
+    setPincode(cleanPin);
+
+    if (cleanPin.length === 6) {
+      try {
+        setFetchingCity(true);
+        const res = await fetch(`/api/pincode?code=${cleanPin}`);
+        const data = await res.json();
+        if (data.success && data.city) {
+          setCity(data.city);
+          localStorage.setItem("cb_pincode", cleanPin);
+          localStorage.setItem("cb_city", data.city);
+        }
+      } catch (e) {
+        console.error("City fetch error:", e);
+      } finally {
+        setFetchingCity(false);
+      }
+    }
+  };
+
+  const handleSelectAddress = (addr: SavedAddress) => {
+    setSelectedAddressId(addr.id);
+    setName(addr.fullName);
+    setPhone(addr.phone);
+    setAddress(addr.street);
+    setCity(addr.city);
+    setPincode(addr.pincode);
+  };
+
+  const handleNewAddressOption = () => {
+    setSelectedAddressId("NEW");
+    setAddress("");
+    setCity("");
+  };
+
   // Pricing calculations
+  const shippingCharges = 60; // Standard shipping fee
   const subtotal = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
   const totalMrp = cart.reduce(
     (acc, item) => acc + (item.originalPrice || item.price * 1.4) * item.quantity,
     0
   );
   const discountAmount = appliedCoupon ? appliedCoupon.discountAmount : 0;
-  const finalTotal = Math.max(1, subtotal - discountAmount);
+  const finalTotal = Math.max(1, subtotal + shippingCharges - discountAmount);
 
-  // Abandoned Cart Sync (Debounced when customer fills phone)
+  // Abandoned Cart Sync (Fixed to /api/cart/abandoned)
   useEffect(() => {
     if (phone.length >= 10 && cart.length > 0) {
       if (abandonTimeoutRef.current) clearTimeout(abandonTimeoutRef.current);
@@ -122,9 +202,7 @@ export default function CartPage() {
               totalAmount: finalTotal,
             }),
           });
-        } catch {
-          // silent fallback
-        }
+        } catch {}
       }, 1500);
     }
     return () => {
@@ -138,13 +216,12 @@ export default function CartPage() {
     window.dispatchEvent(new Event("storage"));
   };
 
-  // Quantity strictly between 1 and 9
   const updateQuantity = (productId: string, delta: number) => {
     const updated = cart
       .map((item) => {
         if (item.productId === productId) {
           const newQty = item.quantity + delta;
-          if (newQty > 9) return item; // Max 9 lock
+          if (newQty > 9) return item;
           return newQty > 0 ? { ...item, quantity: newQty } : null;
         }
         return item;
@@ -159,7 +236,7 @@ export default function CartPage() {
     saveCart(updated);
   };
 
-  // Apply Coupon Logic linked to /api/coupons/apply
+  // Apply Coupon Logic
   const handleApplyCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!couponCode.trim()) return;
@@ -172,7 +249,7 @@ export default function CartPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           code: couponCode.trim().toUpperCase(),
-          cartTotal: subtotal,
+          cartTotal: subtotal + shippingCharges,
         }),
       });
 
@@ -201,6 +278,25 @@ export default function CartPage() {
   };
 
   const createOrderInDb = async (paymentId: string) => {
+    // If entered new address, save in background
+    if (selectedAddressId === "NEW" && (customerEmail || phone)) {
+      try {
+        await fetch("/api/customer/addresses", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fullName: name,
+            phone: phone,
+            street: address,
+            city: city,
+            pincode: pincode,
+            userEmail: customerEmail,
+            userPhone: phone,
+          }),
+        });
+      } catch {}
+    }
+
     const payload = {
       customer: {
         fullName: name,
@@ -218,6 +314,7 @@ export default function CartPage() {
       })),
       totalAmount: finalTotal,
       discountAmount: discountAmount,
+      shippingCharges: shippingCharges,
       couponCode: appliedCoupon ? appliedCoupon.code : null,
       paymentStatus: "PAID",
       orderStatus: "PROCESSING",
@@ -251,7 +348,9 @@ export default function CartPage() {
     try {
       setProcessingPayment(true);
 
-      if (typeof window.Razorpay === "undefined") {
+      const razorpayConstructor = typeof window !== "undefined" ? (window as any).Razorpay : undefined;
+
+      if (!razorpayConstructor) {
         const orderId = await createOrderInDb("pay_online_" + Date.now());
         localStorage.removeItem("cb_cart");
         window.dispatchEvent(new Event("storage"));
@@ -259,7 +358,7 @@ export default function CartPage() {
         return;
       }
 
-      const options = {
+      const options: any = {
         key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_placeholder",
         amount: finalTotal * 100,
         currency: "INR",
@@ -273,7 +372,7 @@ export default function CartPage() {
         theme: {
           color: "#059669",
         },
-        handler: async function (response: { razorpay_payment_id: string }) {
+        handler: async function (response: any) {
           try {
             const placedOrderId = await createOrderInDb(response.razorpay_payment_id);
             localStorage.removeItem("cb_cart");
@@ -291,7 +390,7 @@ export default function CartPage() {
         },
       };
 
-      const rzp = new window.Razorpay(options);
+      const rzp = new razorpayConstructor(options);
       rzp.on("payment.failed", function (response: any) {
         alert("Payment Failed: " + (response.error?.description || "Transaction cancelled"));
         setProcessingPayment(false);
@@ -315,7 +414,7 @@ export default function CartPage() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] pb-24 text-slate-900 font-sans">
-      {/* Top Header */}
+      {/* Header */}
       <header className="sticky top-0 z-40 bg-white border-b border-slate-200 px-4 sm:px-8 py-3 shadow-xs">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <Link
@@ -339,7 +438,7 @@ export default function CartPage() {
             <ShoppingBag className="w-14 h-14 text-slate-300 mx-auto" />
             <h2 className="text-lg font-black text-slate-900">Your Cart is Empty</h2>
             <p className="text-xs text-slate-500 max-w-sm mx-auto">
-              Add your favourite smart gadgets and lifestyle products to proceed.
+              Add your favourite gadgets and lifestyle products to proceed.
             </p>
             <Link
               href="/"
@@ -350,15 +449,15 @@ export default function CartPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            {/* Left Col: Cart Items & Address */}
             <div className="lg:col-span-7 space-y-4">
+              {/* Cart Items List */}
               <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-2xs space-y-4">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                   <h1 className="text-sm font-black text-slate-900">
                     Shopping Cart ({cart.length} items)
                   </h1>
-                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-                    Free Express Delivery
+                  <span className="text-[11px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
+                    Express Doorstep Delivery
                   </span>
                 </div>
 
@@ -428,14 +527,64 @@ export default function CartPage() {
                 </div>
               </div>
 
-              {/* Delivery Address Form */}
+              {/* Delivery Address Section */}
               <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-2xs space-y-3">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-xs font-black text-slate-900 uppercase tracking-wider">
-                    Delivery Address
+                  <h2 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-emerald-600" /> Delivery Address
                   </h2>
                   <span className="text-[10px] font-bold text-slate-400">Step 1 of 2</span>
                 </div>
+
+                {/* Saved Addresses Selector */}
+                {savedAddresses.length > 0 && (
+                  <div className="space-y-2 mb-3">
+                    <p className="text-[11px] font-bold text-slate-500">Select Delivery Location:</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {savedAddresses.map((addr) => {
+                        const isSelected = selectedAddressId === addr.id;
+                        return (
+                          <div
+                            key={addr.id}
+                            onClick={() => handleSelectAddress(addr)}
+                            className={`p-3 rounded-xl border text-xs cursor-pointer transition ${
+                              isSelected
+                                ? "border-emerald-600 bg-emerald-50/50 shadow-2xs"
+                                : "border-slate-200 hover:border-slate-300 bg-white"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-slate-900 truncate">{addr.fullName}</span>
+                              {isSelected && <Check className="w-3.5 h-3.5 text-emerald-600" />}
+                            </div>
+                            <p className="text-slate-500 text-[11px] line-clamp-1 mt-0.5">
+                              {addr.street}, {addr.city}
+                            </p>
+                            <p className="text-slate-700 font-semibold text-[10px] mt-0.5">
+                              PIN: {addr.pincode} • 📞 {addr.phone}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        onClick={handleNewAddressOption}
+                        className={`text-xs font-bold underline cursor-pointer ${
+                          selectedAddressId === "NEW"
+                            ? "text-emerald-700 font-black"
+                            : "text-slate-500 hover:text-slate-800"
+                        }`}
+                      >
+                        + Enter Different / New Address
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Address Form Inputs */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   <input
                     type="text"
@@ -464,30 +613,34 @@ export default function CartPage() {
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-emerald-600"
                 />
                 <div className="grid grid-cols-2 gap-2.5">
-                  <input
-                    type="text"
-                    required
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    placeholder="City / District *"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-emerald-600"
-                  />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      required
+                      value={city}
+                      onChange={(e) => setCity(e.target.value)}
+                      placeholder="City / District *"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-emerald-600"
+                    />
+                    {fetchingCity && (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600 absolute right-3 top-1/2 -translate-y-1/2" />
+                    )}
+                  </div>
                   <input
                     type="text"
                     required
                     maxLength={6}
                     value={pincode}
-                    onChange={(e) => setPincode(e.target.value.replace(/\D/g, ""))}
-                    placeholder="Pincode *"
+                    onChange={(e) => handlePincodeChange(e.target.value)}
+                    placeholder="Pincode (6 digits) *"
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-emerald-600"
                   />
                 </div>
               </div>
             </div>
 
-            {/* Right Col: Price Summary & Emerald Green Payment Box */}
+            {/* Right Summary Column */}
             <div className="lg:col-span-5 space-y-4">
-              {/* Payment Box */}
               <div className="bg-emerald-600 text-white rounded-2xl p-4 sm:p-5 shadow-sm space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-black uppercase tracking-widest text-emerald-100">
@@ -502,21 +655,19 @@ export default function CartPage() {
                     <CreditCard className="w-5 h-5 text-white" />
                   </div>
                   <div>
-                    <h3 className="text-xs font-black text-white">
-                      Instant Online Payment
-                    </h3>
+                    <h3 className="text-xs font-black text-white">Instant Online Payment</h3>
                     <p className="text-[11px] text-emerald-100 font-medium">
-                      UPI (GPay, PhonePe, Paytm), Cards & NetBanking
+                      UPI (GPay, PhonePe, Paytm), Cards &amp; NetBanking
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* Coupon Box */}
+              {/* Coupon Section */}
               <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
-                    <Tag className="w-3.5 h-3.5 text-emerald-600" /> Apply Coupon
+                    <Tag className="w-3.5 h-3.5 text-emerald-600" /> Coupon
                   </span>
                   {appliedCoupon && (
                     <button
@@ -534,7 +685,7 @@ export default function CartPage() {
                       type="text"
                       value={couponCode}
                       onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                      placeholder="Enter code (e.g. WINTER50)"
+                      placeholder="Enter Coupon Code"
                       className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold uppercase tracking-wider outline-none focus:border-emerald-600"
                     />
                     <button
@@ -574,16 +725,16 @@ export default function CartPage() {
                     <span>Store Price</span>
                     <span className="text-slate-900 font-bold">₹{subtotal.toLocaleString("en-IN")}</span>
                   </div>
+                  <div className="flex justify-between items-center">
+                    <span>Shipping Charges</span>
+                    <span className="text-slate-900 font-bold">₹{shippingCharges}</span>
+                  </div>
                   {appliedCoupon && (
                     <div className="flex justify-between text-emerald-600 font-bold">
                       <span>Coupon Discount ({appliedCoupon.code})</span>
                       <span>- ₹{appliedCoupon.discountAmount.toLocaleString("en-IN")}</span>
                     </div>
                   )}
-                  <div className="flex justify-between">
-                    <span>Shipping Charges</span>
-                    <span className="text-emerald-600 font-bold">FREE EXPRESS</span>
-                  </div>
                   <div className="pt-2.5 border-t border-slate-100 flex justify-between items-center text-sm font-black text-slate-950">
                     <span>Total Payable</span>
                     <span className="text-emerald-600 text-base">₹{finalTotal.toLocaleString("en-IN")}</span>

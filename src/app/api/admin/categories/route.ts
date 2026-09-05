@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-// 1. GET: Fetch Categories with Live Real Product Counts
+// 1. GET: Fetch Categories with Live Product Count
 export async function GET() {
   try {
     const categories = await prisma.category.findMany({
@@ -27,7 +27,6 @@ export async function GET() {
       icon: c.icon,
       displayOrder: c.displayOrder,
       productCount: c._count?.products || 0,
-      itemCount: c._count?.products || 0,
     }));
 
     return NextResponse.json({ success: true, categories: formatted });
@@ -39,68 +38,112 @@ export async function GET() {
   }
 }
 
-// 2. DELETE: Safe Delete with Total Cascade Unlinking
-export async function DELETE(req: Request) {
+// 2. POST: Create OR Safe Delete
+export async function POST(req: Request) {
   try {
-    const { searchParams } = new URL(req.url);
-    let id = searchParams.get("id");
+    const body = await req.json();
+    const { action, id, name, icon } = body;
 
-    // Agar body mein id bheji ho
-    if (!id) {
+    // --- CASE A: DELETE CATEGORY ---
+    if (action === "DELETE" || id) {
+      const targetId = id;
+      if (!targetId) {
+        return NextResponse.json(
+          { success: false, error: "Category ID is required" },
+          { status: 400 }
+        );
+      }
+
+      // Step 1: Subcategories ka parent unlink
       try {
-        const body = await req.json();
-        id = body.id;
+        await (prisma.category as any).updateMany({
+          where: { parentId: targetId },
+          data: { parentId: null },
+        });
       } catch {}
+
+      // Step 2: Product_categoryId_fkey RESTRICT bypass
+      // Pehle categoryId ko null karne ki koshish karein
+      let unlinked = false;
+      try {
+        await (prisma.product as any).updateMany({
+          where: { categoryId: targetId },
+          data: { categoryId: null },
+        });
+        unlinked = true;
+      } catch {
+        // Agar schema me categoryId required (not nullable) hai
+        unlinked = false;
+      }
+
+      // Agar categoryId null nahi ho sakta (RESTRICT error ki wajah), toh products ko default category me shift karein
+      if (!unlinked) {
+        // Ek fallback "General" category dhoondein ya banayein
+        let fallbackCategory = await prisma.category.findFirst({
+          where: {
+            id: { not: targetId },
+          },
+        });
+
+        if (!fallbackCategory) {
+          fallbackCategory = await prisma.category.create({
+            data: {
+              name: "General",
+              slug: "general",
+              icon: "📦",
+              displayOrder: 99,
+            },
+          });
+        }
+
+        // Saare linked products ko is safe category par move karein
+        await prisma.product.updateMany({
+          where: { categoryId: targetId },
+          data: { categoryId: fallbackCategory.id },
+        });
+      }
+
+      // Step 3: Ab category ko bina foreign key restriction ke delete karein
+      await prisma.category.delete({
+        where: { id: targetId },
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: "Category deleted successfully",
+      });
     }
 
-    if (!id) {
+    // --- CASE B: CREATE CATEGORY ---
+    if (!name || !name.trim()) {
       return NextResponse.json(
-        { success: false, error: "Category ID is required" },
+        { success: false, error: "Category name is required" },
         { status: 400 }
       );
     }
 
-    // Step A: Sub-categories ka parentId null karein
-    try {
-      await (prisma.category as any).updateMany({
-        where: { parentId: id },
-        data: { parentId: null },
-      });
-    } catch {}
+    const slug = name.trim().toLowerCase().replace(/\s+/g, "-");
 
-    // Step B: Direct Category-Product unlinking (1-to-many relation)
-    try {
-      await (prisma.product as any).updateMany({
-        where: { categoryId: id },
-        data: { categoryId: null },
-      });
-    } catch {}
-
-    // Step C: Many-to-many disconnect (agar Prisma implicit relation hai)
-    try {
-      await prisma.category.update({
-        where: { id },
-        data: {
-          products: {
-            set: [],
-          },
-        },
-      });
-    } catch {}
-
-    // Step D: Ab clean delete karein
-    await prisma.category.delete({
-      where: { id },
+    const newCategory = await prisma.category.create({
+      data: {
+        name: name.trim(),
+        slug: slug,
+        icon: icon?.trim() || null,
+        displayOrder: 0,
+      },
     });
 
     return NextResponse.json({
       success: true,
-      message: "Category deleted successfully",
+      category: {
+        ...newCategory,
+        productCount: 0,
+      },
     });
   } catch (error: any) {
-    console.error("Delete category error:", error);
+    console.error("Category Action Error:", error);
     return NextResponse.json(
-      { success: false, error: error.message || "Error deleting category" },
+      { success: false, error: error.message || "Operation failed" },
       { status: 500 }
     );
   }
