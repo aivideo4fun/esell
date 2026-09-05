@@ -1,72 +1,218 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { DollarSign, ShoppingBag, PackageCheck, AlertCircle, ArrowUpRight } from "lucide-react";
+import {
+  Banknote,
+  ShoppingBag,
+  AlertTriangle,
+  Package,
+  ArrowUpRight,
+  Loader2,
+  RefreshCw,
+  CheckCircle2,
+} from "lucide-react";
+
+interface MetricsData {
+  totalRevenue: number;
+  prepaidOrdersCount: number;
+  pendingDispatchCount: number;
+  activeProductsCount: number;
+  categoriesCount: number;
+}
 
 export default function AdminDashboardPage() {
-  const stats = [
-    { title: "Total Revenue", value: "₹48,920", change: "+14% this week", icon: DollarSign, color: "text-green-600 bg-green-50" },
-    { title: "Prepaid Orders", value: "38", change: "100% verified payment", icon: ShoppingBag, color: "text-blue-600 bg-blue-50" },
-    { title: "Pending Dispatch", value: "5", change: "Needs supplier fulfillment", icon: AlertCircle, color: "text-amber-600 bg-amber-50" },
-    { title: "Active Catalog", value: "12 Items", change: "In 6 categories", icon: PackageCheck, color: "text-purple-600 bg-purple-50" },
-  ];
+  const [metrics, setMetrics] = useState<MetricsData>({
+    totalRevenue: 0,
+    prepaidOrdersCount: 0,
+    pendingDispatchCount: 0,
+    activeProductsCount: 0,
+    categoriesCount: 0,
+  });
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchMetrics = async (isManual = false) => {
+    if (isManual) setRefreshing(true);
+    try {
+      const res = await fetch("/api/admin/metrics");
+      const data = await res.json();
+      if (data.success && data.metrics) {
+        setMetrics(data.metrics);
+      }
+    } catch (err) {
+      console.error("Error loading dashboard metrics:", err);
+    } finally {
+      setLoading(false);
+      if (isManual) setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchMetrics();
+  }, []);
 
   return (
-    <div className="space-y-8 max-w-6xl mx-auto">
-      <div>
-        <h1 className="text-2xl font-black text-gray-950">Store Performance</h1>
-        <p className="text-sm text-gray-500 mt-1">Real-time metrics for CatchBuddy</p>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+            Store Performance
+          </h1>
+          <p className="text-xs text-slate-500 font-bold mt-0.5">
+            Real-time metrics for CatchBuddy
+          </p>
+        </div>
+
+        <button
+          onClick={() => fetchMetrics(true)}
+          disabled={refreshing}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 text-xs font-bold rounded-xl hover:bg-slate-50 transition shadow-2xs cursor-pointer disabled:opacity-50"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
+          <span>Refresh</span>
+        </button>
       </div>
 
-      {/* Metrics Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        {stats.map((stat, i) => {
-          const Icon = stat.icon;
-          return (
-            <div key={i} className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-500 uppercase">{stat.title}</span>
-                <div className={`p-2 rounded-xl ${stat.color}`}>
-                  <Icon className="w-4 h-4" />
-                </div>
-              </div>
-              <p className="text-2xl font-black text-gray-950">{stat.value}</p>
-              <p className="text-xs text-gray-500 font-medium">{stat.change}</p>
-            </div>
-          );
-        })}
+      {/* 4 Metric Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Total Revenue */}
+        <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-black tracking-wider text-slate-400 uppercase">
+              Total Revenue
+            </span>
+            <span className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
+              <Banknote className="w-4 h-4" />
+            </span>
+          </div>
+          <div className="mt-4">
+            {loading ? (
+              <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
+            ) : (
+              <p className="text-2xl font-black text-slate-900">
+                ₹{metrics.totalRevenue.toLocaleString("en-IN")}
+              </p>
+            )}
+            <p className="text-[11px] font-bold text-emerald-600 mt-1">Live verified sales</p>
+          </div>
+        </div>
+
+        {/* Prepaid Orders */}
+        <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-black tracking-wider text-slate-400 uppercase">
+              Prepaid Orders
+            </span>
+            <span className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
+              <ShoppingBag className="w-4 h-4" />
+            </span>
+          </div>
+          <div className="mt-4">
+            {loading ? (
+              <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+            ) : (
+              <p className="text-2xl font-black text-slate-900">
+                {metrics.prepaidOrdersCount}
+              </p>
+            )}
+            <p className="text-[11px] font-bold text-slate-500 mt-1">100% verified payment</p>
+          </div>
+        </div>
+
+        {/* Pending Dispatch */}
+        <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-black tracking-wider text-slate-400 uppercase">
+              Pending Dispatch
+            </span>
+            <span className="w-8 h-8 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center">
+              <AlertTriangle className="w-4 h-4" />
+            </span>
+          </div>
+          <div className="mt-4">
+            {loading ? (
+              <Loader2 className="w-6 h-6 animate-spin text-amber-600" />
+            ) : (
+              <p className="text-2xl font-black text-slate-900">
+                {metrics.pendingDispatchCount}
+              </p>
+            )}
+            <p className="text-[11px] font-bold text-slate-500 mt-1">Needs fulfillment</p>
+          </div>
+        </div>
+
+        {/* Active Catalog */}
+        <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-black tracking-wider text-slate-400 uppercase">
+              Active Catalog
+            </span>
+            <span className="w-8 h-8 rounded-full bg-purple-50 text-purple-600 flex items-center justify-center">
+              <Package className="w-4 h-4" />
+            </span>
+          </div>
+          <div className="mt-4">
+            {loading ? (
+              <Loader2 className="w-6 h-6 animate-spin text-purple-600" />
+            ) : (
+              <p className="text-2xl font-black text-slate-900">
+                {metrics.activeProductsCount} Items
+              </p>
+            )}
+            <p className="text-[11px] font-bold text-slate-500 mt-1">
+              In {metrics.categoriesCount} categories
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* Quick Action Hub */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm space-y-4">
-          <h3 className="font-bold text-gray-950 text-base">Quick Actions</h3>
-          <div className="flex flex-col gap-3">
+      {/* Quick Actions & Operational Health */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Quick Actions */}
+        <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-2xs space-y-4">
+          <h2 className="text-sm font-black text-slate-900">Quick Actions</h2>
+          <div className="space-y-3">
             <Link
               href="/admin/products"
-              className="flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 rounded-2xl transition group"
+              className="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-emerald-50/50 border border-slate-200 hover:border-emerald-200 rounded-2xl transition group"
             >
-              <span className="text-sm font-bold text-gray-800">Add / Manage Store Products</span>
-              <ArrowUpRight className="w-4 h-4 text-gray-400 group-hover:text-blue-600 transition" />
+              <span className="text-xs font-bold text-slate-800 group-hover:text-emerald-700">
+                Add / Manage Store Products
+              </span>
+              <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 transition" />
             </Link>
+
             <Link
               href="/admin/orders"
-              className="flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 rounded-2xl transition group"
+              className="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-emerald-50/50 border border-slate-200 hover:border-emerald-200 rounded-2xl transition group"
             >
-              <span className="text-sm font-bold text-gray-800">Process Pending Customer Orders</span>
-              <ArrowUpRight className="w-4 h-4 text-gray-400 group-hover:text-blue-600 transition" />
+              <span className="text-xs font-bold text-slate-800 group-hover:text-emerald-700">
+                Process Pending Customer Orders
+              </span>
+              <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 transition" />
             </Link>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-gray-900 to-gray-950 text-white p-6 rounded-3xl shadow-sm flex flex-col justify-between">
+        {/* Operational Health */}
+        <div className="bg-[#0b1329] text-white rounded-3xl p-6 shadow-2xs flex flex-col justify-between space-y-6">
           <div className="space-y-2">
-            <span className="text-[11px] font-bold text-blue-400 uppercase tracking-wider">Operational Health</span>
-            <h3 className="text-lg font-bold">100% Prepaid Verification Active</h3>
-            <p className="text-xs text-gray-400 leading-relaxed">
+            <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">
+              Operational Health
+            </span>
+            <h2 className="text-lg font-black text-white">
+              100% Prepaid Verification Active
+            </h2>
+            <p className="text-xs text-slate-300 leading-relaxed font-medium">
               Razorpay API automatically verifies transactions before order status switches to confirmed.
             </p>
           </div>
-          <div className="mt-4 pt-4 border-t border-gray-800 text-xs text-green-400 font-bold">
-            All systems normal • Database connected
+
+          <div className="flex items-center gap-2 text-xs font-bold text-emerald-400">
+            <CheckCircle2 className="w-4 h-4" />
+            <span>All systems normal • Database connected</span>
           </div>
         </div>
       </div>

@@ -1,12 +1,7 @@
-/** @type {import('next').NextConfig} */
-const nextConfig = {
-  eslint: {
-    // Build time par ESLint mismatch errors ko bypass karega
-    ignoreDuringBuilds: true,
-  },
-  typescript: {
-    ignoreBuildErrors: false,
-  },
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  output: "standalone", // AWS EC2 ke liye lightweight production build banata hai
   images: {
     remotePatterns: [
       {

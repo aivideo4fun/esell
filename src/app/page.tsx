@@ -207,6 +207,19 @@ export default function HomePage() {
     }
   };
 
+  // Mobile Bottom Bar Search Click Handler
+  const handleMobileSearchClick = () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    setTimeout(() => {
+      const mobileSearchInput = document.getElementById("mobile-search-input") as HTMLInputElement;
+      if (mobileSearchInput) {
+        mobileSearchInput.focus();
+      } else {
+        router.push("/shop");
+      }
+    }, 250);
+  };
+
   const handleQuickAdd = (product: ProductItem) => {
     try {
       const existing = localStorage.getItem("cb_cart");
@@ -317,7 +330,7 @@ export default function HomePage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] pb-24 md:pb-12 text-slate-900 font-sans">
+    <div className="min-h-screen bg-[#F8FAFC] pb-20 md:pb-0 text-slate-900 font-sans">
       {/* Header */}
       <header className="sticky top-0 z-50 bg-white border-b border-slate-200 px-4 sm:px-8 py-3 shadow-xs">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
@@ -364,8 +377,10 @@ export default function HomePage() {
           </div>
         </div>
 
+        {/* Mobile Search Input with unique ID */}
         <form onSubmit={handleSearchSubmit} className="md:hidden mt-2 relative">
           <input
+            id="mobile-search-input"
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -397,7 +412,6 @@ export default function HomePage() {
                 </span>
                 <ChevronDown className="w-3 h-3 text-slate-400 group-hover:text-slate-700 transition" />
               </div>
-              {/* Pincode ke theek niche city */}
               <span className="text-[10px] font-bold text-emerald-700 line-clamp-1">
                 {city}
               </span>
@@ -654,10 +668,10 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* WhatsApp Support Bar */}
+        {/* WhatsApp Support Bar with Real Number */}
         <section>
           <a
-            href="https://wa.me/919999999999"
+            href="https://wa.me/917976152206?text=Hi%20CatchBuddy%2C%20I%20need%20help%20with%20my%20order"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-900 font-bold text-xs hover:bg-emerald-100 transition"
@@ -665,45 +679,11 @@ export default function HomePage() {
             <MessageCircle className="w-6 h-6 text-emerald-600 shrink-0" />
             <div className="flex-1">
               <div className="text-sm font-black">Need Help? Chat with us on WhatsApp</div>
-              <div className="text-xs text-emerald-700 font-medium">Fast support for order status & inquiries</div>
+              <div className="text-xs text-emerald-700 font-medium">Fast support for order status &amp; inquiries (+91 7976152206)</div>
             </div>
           </a>
         </section>
       </main>
-
-      {/* Mobile Bottom Navigation */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-200 py-2.5 px-6 flex items-center justify-between shadow-lg">
-        <Link href="/" className="flex flex-col items-center gap-0.5 text-emerald-600">
-          <Home className="w-4 h-4" />
-          <span className="text-[10px] font-black">Home</span>
-        </Link>
-        <Link href="/shop" className="flex flex-col items-center gap-0.5 text-slate-500 hover:text-slate-900">
-          <LayoutGrid className="w-4 h-4" />
-          <span className="text-[10px] font-bold">Shop</span>
-        </Link>
-        <button
-          onClick={() => {
-            const input = document.querySelector('input[type="text"]') as HTMLInputElement;
-            input?.focus();
-          }}
-          className="flex flex-col items-center gap-0.5 text-slate-500 hover:text-slate-900"
-        >
-          <Search className="w-4 h-4" />
-          <span className="text-[10px] font-bold">Search</span>
-        </button>
-        <Link href="/orders" className="flex flex-col items-center gap-0.5 text-slate-500 hover:text-slate-900">
-          <Package className="w-4 h-4" />
-          <span className="text-[10px] font-bold">Orders</span>
-        </Link>
-        
-        <Link
-          href={currentUser ? "/account" : "/login"}
-          className="flex flex-col items-center gap-0.5 text-slate-500 hover:text-slate-900"
-        >
-          <User className="w-4 h-4" />
-          <span className="text-[10px] font-bold">{currentUser ? "Account" : "Login"}</span>
-        </Link>
-      </nav>
 
       {/* Location / Pincode / GPS Modal */}
       {isPincodeModalOpen && (

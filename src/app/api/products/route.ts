@@ -10,7 +10,10 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const category = searchParams.get("category");
-    const search = searchParams.get("search");
+    // 'q' ya 'search' dono me se jo bhi aaye support karein
+    const search = searchParams.get("q") || searchParams.get("search");
+    const limitParam = searchParams.get("limit");
+    const limit = limitParam ? parseInt(limitParam, 10) : undefined;
 
     const whereClause: Prisma.ProductWhereInput = {};
 
@@ -20,10 +23,11 @@ export async function GET(req: Request) {
       };
     }
 
-    if (search) {
+    if (search && search.trim()) {
+      const cleanSearch = search.trim();
       whereClause.OR = [
-        { title: { contains: search, mode: "insensitive" } },
-        { description: { contains: search, mode: "insensitive" } },
+        { title: { contains: cleanSearch, mode: "insensitive" } },
+        { description: { contains: cleanSearch, mode: "insensitive" } },
       ];
     }
 
@@ -34,6 +38,7 @@ export async function GET(req: Request) {
         category: true,
       },
       orderBy: { createdAt: "desc" },
+      ...(limit ? { take: limit } : {}),
     });
 
     return NextResponse.json(
