@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 // 1. GET: Saare customers with metrics fetch karein
 export async function GET(req: Request) {
@@ -30,11 +31,12 @@ export async function GET(req: Request) {
 
     const formattedCustomers = users.map((user) => {
       const orderCount = user.orders?.length || 0;
-      const totalSpent = user.orders?.reduce((acc, order) => acc + (order.totalAmount || 0), 0) || 0;
-      
+      const totalSpent =
+        user.orders?.reduce((acc, order) => acc + (order.totalAmount || 0), 0) || 0;
+
       totalGMV += totalSpent;
       const isBlocked = Boolean((user as unknown as { isBlocked?: boolean }).isBlocked);
-      
+
       if (isBlocked) {
         blockedCount++;
       } else {
@@ -66,16 +68,25 @@ export async function GET(req: Request) {
       return true;
     });
 
-    return NextResponse.json({
-      success: true,
-      metrics: {
-        totalCustomers: users.length,
-        activeBuyers: activeCount,
-        blockedAccounts: blockedCount,
-        totalCustomerSpend: totalGMV,
+    return NextResponse.json(
+      {
+        success: true,
+        metrics: {
+          totalCustomers: users.length,
+          activeBuyers: activeCount,
+          blockedAccounts: blockedCount,
+          totalCustomerSpend: totalGMV,
+        },
+        customers: filteredList,
       },
-      customers: filteredList,
-    });
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      }
+    );
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to load customers";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
@@ -94,7 +105,6 @@ export async function PATCH(req: Request) {
     const updatedUser = await prisma.user.update({
       where: { id: customerId },
       data: {
-        // Agar schema me isBlocked nahi hai to safe metadata fallback
         ...({ isBlocked } as unknown as object),
       },
     });

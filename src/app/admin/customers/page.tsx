@@ -44,27 +44,49 @@ export default function CustomersCRMPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  const fetchCustomers = useCallback(async () => {
-    try {
-      setLoading(true);
-      const res = await fetch(`/api/admin/customers?filter=${activeTab}&search=${encodeURIComponent(searchTerm)}`);
-      const data = await res.json();
-      if (data.success) {
-        setCustomers(data.customers || []);
-        setMetrics(data.metrics);
+  const fetchCustomers = useCallback(
+    async (showLoadingSpinner = false) => {
+      try {
+        if (showLoadingSpinner) setLoading(true);
+        const res = await fetch(
+          `/api/admin/customers?filter=${activeTab}&search=${encodeURIComponent(
+            searchTerm
+          )}&_t=${Date.now()}`,
+          {
+            cache: "no-store",
+            headers: {
+              "Cache-Control": "no-cache",
+            },
+          }
+        );
+        const data = await res.json();
+        if (data.success) {
+          setCustomers(data.customers || []);
+          setMetrics(data.metrics);
+        }
+      } catch {
+        console.error("Error fetching customers");
+      } finally {
+        if (showLoadingSpinner) setLoading(false);
       }
-    } catch {
-      console.error("Error fetching customers");
-    } finally {
-      setLoading(false);
-    }
-  }, [activeTab, searchTerm]);
+    },
+    [activeTab, searchTerm]
+  );
 
+  // Debounced search / tab change listener
   useEffect(() => {
     const debounceTimer = setTimeout(() => {
-      void fetchCustomers();
+      void fetchCustomers(true);
     }, 300);
     return () => clearTimeout(debounceTimer);
+  }, [fetchCustomers]);
+
+  // Realtime Polling: Har 10 seconds me silently background update
+  useEffect(() => {
+    const interval = setInterval(() => {
+      void fetchCustomers(false);
+    }, 10000);
+    return () => clearInterval(interval);
   }, [fetchCustomers]);
 
   const toggleBlockStatus = async (customer: Customer) => {
@@ -86,7 +108,7 @@ export default function CustomersCRMPage() {
       });
       const data = await res.json();
       if (data.success) {
-        void fetchCustomers();
+        void fetchCustomers(false);
       } else {
         alert(data.error || "Action failed");
       }
@@ -108,7 +130,7 @@ export default function CustomersCRMPage() {
           </p>
         </div>
         <button
-          onClick={() => fetchCustomers()}
+          onClick={() => fetchCustomers(true)}
           className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer border border-slate-200"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
@@ -155,7 +177,9 @@ export default function CustomersCRMPage() {
             TOTAL CUSTOMER SPEND
           </span>
           <div className="flex items-baseline justify-between">
-            <span className="text-2xl font-black text-slate-950">₹{metrics.totalCustomerSpend.toLocaleString("en-IN")}</span>
+            <span className="text-2xl font-black text-slate-950">
+              ₹{metrics.totalCustomerSpend.toLocaleString("en-IN")}
+            </span>
             <IndianRupee className="w-5 h-5 text-blue-500" />
           </div>
           <span className="text-[11px] text-slate-500 font-medium mt-1 block">Lifetime GMV</span>
