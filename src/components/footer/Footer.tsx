@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { 
   ShieldCheck, 
@@ -8,7 +9,6 @@ import {
   HelpCircle, 
   Mail, 
   Phone,
-  FileText,
   Lock
 } from "lucide-react";
 
@@ -64,8 +64,19 @@ export default function Footer() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8 py-10">
           {/* Brand */}
           <div className="col-span-2 md:col-span-1 space-y-3">
-            <Link href="/" className="text-xl font-black text-white tracking-tight">
-              Catch<span className="text-emerald-400">Buddy</span>
+            <Link href="/" className="inline-flex items-center gap-2.5 group">
+              <div className="w-9 h-9 rounded-xl bg-white/10 border border-slate-700 flex items-center justify-center p-1 group-hover:border-emerald-400 transition">
+                <Image
+                  src="/logo.png"
+                  alt="CatchBuddy Logo"
+                  width={36}
+                  height={36}
+                  className="w-full h-full object-contain"
+                />
+              </div>
+              <span className="text-xl font-black text-white tracking-tight">
+                Catch<span className="text-emerald-400">Buddy</span>
+              </span>
             </Link>
             <p className="text-xs text-slate-400 leading-relaxed">
               Your go-to store for trending utilities, smart gadgets, and everyday essentials at unbeatable direct-to-consumer prices.

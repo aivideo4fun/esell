@@ -68,7 +68,7 @@ export async function GET(req: Request) {
   }
 }
 
-// 2. POST: Order Place karne se pehle Strict Stock Check
+// 2. POST: Order Placement with Auto-User Creation for CRM Sync
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -90,7 +90,7 @@ export async function POST(req: Request) {
 
       if (!dbProduct) {
         return NextResponse.json(
-          { success: false, error: `Product nahi mila` },
+          { success: false, error: "Product nahi mila" },
           { status: 404 }
         );
       }
@@ -99,7 +99,7 @@ export async function POST(req: Request) {
         return NextResponse.json(
           {
             success: false,
-            error: `"${dbProduct.title}" out of stock ho chuka hai! Payment process nahi ho sakti.`,
+            error: `"${dbProduct.title}" out of stock ho chuka hai!`,
           },
           { status: 400 }
         );
@@ -121,11 +121,36 @@ export async function POST(req: Request) {
     const parsedAmount = parseFloat(totalAmount) || 0;
 
     const cookieStore = await cookies();
-    const sessionUserId = cookieStore.get("customer_id")?.value || null;
+    let currentUserId = cookieStore.get("customer_id")?.value || null;
+
+    // Customer details sanitize
+    const rawPhone = customerDetails?.phone?.toString().trim() || "";
+    const customerName = customerDetails?.name?.trim() || "Direct Customer";
+    const customerEmail =
+      customerDetails?.email?.trim() ||
+      (rawPhone ? `customer_${rawPhone}@catchbuddy.store` : `customer_${Date.now()}@catchbuddy.store`);
+
+    // Agar current user nahi hai to User table me create/link karein taaki Admin CRM me live update ho
+    if (!currentUserId) {
+      const user = await prisma.user.upsert({
+        where: { email: customerEmail },
+        update: {
+          name: customerName,
+          phone: rawPhone || undefined,
+        },
+        create: {
+          name: customerName,
+          email: customerEmail,
+          phone: rawPhone || null,
+          role: "CUSTOMER",
+        },
+      });
+      currentUserId = user.id;
+    }
 
     // Stock deduction, Address creation, and Order placement inside transaction
     const newOrder = await prisma.$transaction(async (tx) => {
-      // 1. Stock kam karein
+      // 1. Stock deduct karein
       for (const item of items) {
         const pId = item.productId || item.id;
         const qty = item.quantity || 1;
@@ -137,34 +162,34 @@ export async function POST(req: Request) {
         });
       }
 
-      // 2. Address record create karein (Required by Order model relation)
+      // 2. Address record create karein
       const createdAddress = await tx.address.create({
         data: {
-          fullName: customerDetails?.name || "Direct Customer",
-          phone: customerDetails?.phone || "0000000000",
+          fullName: customerName,
+          phone: rawPhone || "0000000000",
           street: customerDetails?.address || "Direct Storefront Checkout",
           city: customerDetails?.city || "Local",
           state: customerDetails?.state || "State",
           pincode: customerDetails?.pincode || "000000",
-          userId: sessionUserId,
+          userId: currentUserId,
         },
       });
 
-      // 3. Schema-compliant Order create karein
+      // 3. Schema-compliant Order create karein with linked userId
       return await tx.order.create({
         data: {
           orderNumber,
           totalAmount: parsedAmount,
-          paymentStatus: "PENDING",
+          paymentStatus: paymentMethod === "COD" ? "PENDING" : "SUCCESS",
           orderStatus: "PAID",
           addressId: createdAddress.id,
-          userId: sessionUserId,
+          userId: currentUserId,
           payments: {
             create: {
               gateway: paymentMethod || "ONLINE",
               gatewayTxnId: `TXN_${Date.now()}_${Math.random().toString(36).slice(-4)}`,
               amount: parsedAmount,
-              status: "COMPLETED",
+              status: paymentMethod === "COD" ? "PENDING" : "COMPLETED",
             },
           },
           items: {

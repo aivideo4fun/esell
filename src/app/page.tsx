@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -17,9 +18,6 @@ import {
   Check,
   Flame,
   MessageCircle,
-  Home,
-  LayoutGrid,
-  Package,
   User,
   ArrowRight,
   X,
@@ -207,19 +205,6 @@ export default function HomePage() {
     }
   };
 
-  // Mobile Bottom Bar Search Click Handler
-  const handleMobileSearchClick = () => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
-    setTimeout(() => {
-      const mobileSearchInput = document.getElementById("mobile-search-input") as HTMLInputElement;
-      if (mobileSearchInput) {
-        mobileSearchInput.focus();
-      } else {
-        router.push("/shop");
-      }
-    }, 250);
-  };
-
   const handleQuickAdd = (product: ProductItem) => {
     try {
       const existing = localStorage.getItem("cb_cart");
@@ -256,7 +241,6 @@ export default function HomePage() {
     }
   };
 
-  // Manual Pincode submit
   const handleSavePincode = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanPin = tempPincode.replace(/\D/g, "").slice(0, 6);
@@ -284,7 +268,6 @@ export default function HomePage() {
     }
   };
 
-  // GPS Auto-Fetch
   const handleUseGps = () => {
     if (!navigator.geolocation) {
       setLocationError("Geolocation is not supported by your browser.");
@@ -332,11 +315,25 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-[#F8FAFC] pb-20 md:pb-0 text-slate-900 font-sans">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-white border-b border-slate-200 px-4 sm:px-8 py-3 shadow-xs">
+      <header className="sticky top-0 z-50 bg-white border-b border-slate-200 px-4 sm:px-8 py-2.5 shadow-xs">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+          
+          {/* Logo with Icon + CatchBuddy Bold Name */}
           <div className="flex items-center gap-3">
-            <Link href="/" className="text-xl sm:text-2xl font-black tracking-tight text-slate-950">
-              Catch<span className="text-emerald-600">Buddy</span>
+            <Link href="/" className="flex items-center gap-2.5 shrink-0 group">
+              <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center p-1 group-hover:border-emerald-300 transition">
+                <Image
+                  src="/logo.png"
+                  alt="CatchBuddy Icon"
+                  width={40}
+                  height={40}
+                  className="w-full h-full object-contain"
+                  priority
+                />
+              </div>
+              <span className="text-xl sm:text-2xl font-black tracking-tight text-slate-950 flex items-center">
+                Catch<span className="text-emerald-600">Buddy</span>
+              </span>
             </Link>
           </div>
 
@@ -377,7 +374,7 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Mobile Search Input with unique ID */}
+        {/* Mobile Search Input */}
         <form onSubmit={handleSearchSubmit} className="md:hidden mt-2 relative">
           <input
             id="mobile-search-input"
@@ -704,7 +701,6 @@ export default function HomePage() {
               </button>
             </div>
 
-            {/* GPS Auto Detection Button */}
             <button
               type="button"
               onClick={handleUseGps}
@@ -730,7 +726,6 @@ export default function HomePage() {
               <div className="flex-1 h-px bg-slate-200" />
             </div>
 
-            {/* Manual Form */}
             <form onSubmit={handleSavePincode} className="space-y-2.5">
               <input
                 type="text"

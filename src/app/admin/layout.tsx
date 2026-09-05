@@ -16,6 +16,7 @@ import {
   Building2,
   // Customers & Marketing
   Users,
+  UserCheck,
   ShoppingBag,
   TicketPercent,
   Megaphone,
@@ -27,7 +28,7 @@ import {
   FileText,
   Search,
   HelpCircle,
-  LayoutTemplate, // <-- Footer Manager Icon
+  LayoutTemplate,
   // Finance
   CreditCard,
   Receipt,
@@ -50,11 +51,10 @@ import {
   Settings as SettingsIcon,
   Cpu,
   // Layout
-  ArrowLeft,
   LogOut,
   Loader2,
   ChevronRight,
-  ExternalLink
+  ExternalLink,
 } from "lucide-react";
 
 export default function AdminLayout({
@@ -133,6 +133,7 @@ export default function AdminLayout({
       title: "CUSTOMERS & MARKETING",
       items: [
         { label: "Customers (CRM)", href: "/admin/customers", icon: Users },
+        { label: "Customer Logins", href: "/admin/customer-logins", icon: UserCheck }, // <-- New Menu for Logged-in Customers
         { label: "Abandoned Carts", href: "/admin/abandoned-carts", icon: ShoppingBag },
         { label: "Coupons & Offers", href: "/admin/coupons", icon: TicketPercent },
         { label: "Marketing Campaigns", href: "/admin/campaigns", icon: Megaphone },
@@ -146,7 +147,7 @@ export default function AdminLayout({
         { label: "Banners & CMS", href: "/admin/banners", icon: ImageIcon },
         { label: "Blog", href: "/admin/blog", icon: BookOpen },
         { label: "Pages", href: "/admin/pages", icon: FileText },
-        { label: "Footer Manager", href: "/admin/footer", icon: LayoutTemplate }, // <-- Added Footer Manager
+        { label: "Footer Manager", href: "/admin/footer", icon: LayoutTemplate },
         { label: "SEO Manager", href: "/admin/seo", icon: Search },
         { label: "FAQ", href: "/admin/faq", icon: HelpCircle },
       ],

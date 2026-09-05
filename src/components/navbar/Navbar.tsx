@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { 
   ShoppingBag, 
@@ -180,9 +181,20 @@ export default function Navbar() {
     <header className="sticky top-0 z-40 bg-white border-b border-gray-100 shadow-sm">
       {/* 1. TOP MAIN NAVIGATION BAR */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
-        {/* Logo */}
-        <Link href="/" className="flex items-center gap-1 shrink-0">
-          <span className="text-2xl font-black tracking-tight text-[#0f172a]">
+        
+        {/* Brand Logo with Icon + Bold Text */}
+        <Link href="/" className="flex items-center gap-2.5 shrink-0 group">
+          <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center p-1 group-hover:border-emerald-400 transition">
+            <Image
+              src="/logo.png"
+              alt="CatchBuddy Logo"
+              width={40}
+              height={40}
+              className="w-full h-full object-contain"
+              priority
+            />
+          </div>
+          <span className="text-xl sm:text-2xl font-black tracking-tight text-[#0f172a]">
             Catch<span className="text-[#16a34a]">Buddy</span>
           </span>
         </Link>
