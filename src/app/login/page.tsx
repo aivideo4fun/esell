@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -16,13 +16,19 @@ import {
   KeyRound,
   CheckCircle2,
 } from "lucide-react";
+import {
+  RecaptchaVerifier,
+  signInWithPhoneNumber,
+  ConfirmationResult,
+} from "firebase/auth";
+import { auth } from "@/lib/firebase";
 
 export default function AuthPage() {
   const router = useRouter();
 
   const [mode, setMode] = useState<"LOGIN" | "SIGNUP" | "FORGOT">("LOGIN");
   const [signupStep, setSignupStep] = useState<"DETAILS" | "OTP">("DETAILS");
-  const [forgotStep, setForgotStep] = useState<"REQUEST" | "RESET">("REQUEST");
+  const [forgotStep, setForgotStep] = useState<"REQUEST" | "OTP" | "RESET">("REQUEST");
 
   // Login Form
   const [loginIdentifier, setLoginIdentifier] = useState("");
@@ -49,6 +55,38 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+
+  const confirmationResultRef = useRef<ConfirmationResult | null>(null);
+  const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && auth && !recaptchaVerifierRef.current) {
+      try {
+        recaptchaVerifierRef.current = new RecaptchaVerifier(
+          auth,
+          "recaptcha-container",
+          {
+            size: "invisible",
+            callback: () => {},
+            "expired-callback": () => {
+              setErrorMsg("Security check expired. Please try again.");
+            },
+          }
+        );
+      } catch (err) {
+        console.warn("reCAPTCHA init:", err);
+      }
+    }
+
+    return () => {
+      if (recaptchaVerifierRef.current) {
+        try {
+          recaptchaVerifierRef.current.clear();
+        } catch {}
+        recaptchaVerifierRef.current = null;
+      }
+    };
+  }, []);
 
   // 1. STRICT LOGIN HANDLER
   const handleLogin = async (e: React.FormEvent) => {
@@ -86,14 +124,14 @@ export default function AuthPage() {
       } else {
         setErrorMsg(data.error || "Invalid login credentials or wrong password.");
       }
-    } catch (err) {
+    } catch {
       setErrorMsg("Unable to connect to server. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
-  // 2. SIGNUP OTP TRIGGER
+  // 2. SIGNUP - SEND FIREBASE OTP
   const handleSendSignupOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
@@ -113,53 +151,65 @@ export default function AuthPage() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/auth/customer", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "SEND_SIGNUP_OTP",
-          name: fullName.trim(),
-          email: email.trim().toLowerCase(),
-          mobile: cleanMobile,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setSignupStep("OTP");
-        setSuccessMsg(`Verification code sent to +91 ${cleanMobile}`);
-      } else {
-        setErrorMsg(data.error || "Failed to send OTP code");
+      if (!auth) throw new Error("Firebase Auth not initialized");
+
+      if (!recaptchaVerifierRef.current) {
+        recaptchaVerifierRef.current = new RecaptchaVerifier(
+          auth,
+          "recaptcha-container",
+          { size: "invisible" }
+        );
       }
-    } catch {
-      setErrorMsg("Server error sending OTP");
+
+      const confirmation = await signInWithPhoneNumber(
+        auth,
+        "+91" + cleanMobile,
+        recaptchaVerifierRef.current
+      );
+      confirmationResultRef.current = confirmation;
+
+      setSignupStep("OTP");
+      setSuccessMsg(`Firebase SMS OTP sent to +91 ${cleanMobile}`);
+    } catch (fbErr: any) {
+      console.error("Firebase SMS error:", fbErr);
+      setErrorMsg(fbErr.message || "Failed to send Firebase SMS OTP.");
     } finally {
       setLoading(false);
     }
   };
 
-  // 3. VERIFY OTP & REGISTER
+  // 3. VERIFY FIREBASE OTP & REGISTER
   const handleVerifyOtpAndRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
 
-    if (otp.trim().length < 4) {
-      setErrorMsg("Please enter a valid verification code.");
+    if (otp.trim().length < 6) {
+      setErrorMsg("Please enter the 6-digit SMS OTP.");
       return;
     }
 
     setLoading(true);
 
     try {
+      if (!confirmationResultRef.current) {
+        setErrorMsg("Session expired. Please resend OTP.");
+        setLoading(false);
+        return;
+      }
+
+      // Verify via Firebase SDK
+      await confirmationResultRef.current.confirm(otp.trim());
+
+      // Save to database
       const res = await fetch("/api/auth/customer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "VERIFY_AND_REGISTER",
+          action: "REGISTER_VERIFIED",
           name: fullName.trim(),
           email: email.trim().toLowerCase(),
           mobile: mobile.replace(/\D/g, "").slice(-10),
           password: password,
-          otp: otp.trim(),
         }),
       });
 
@@ -173,13 +223,13 @@ export default function AuthPage() {
         setErrorMsg(data.error || "Failed to complete registration");
       }
     } catch {
-      setErrorMsg("Connection error during registration");
+      setErrorMsg("Invalid OTP code entered. Please check the SMS and retry.");
     } finally {
       setLoading(false);
     }
   };
 
-  // 4. FORGOT PASSWORD - SEND OTP
+  // 4. FORGOT PASSWORD - CHECK USER & SEND FIREBASE OTP
   const handleSendForgotOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
@@ -193,35 +243,79 @@ export default function AuthPage() {
 
     setLoading(true);
     try {
-      const res = await fetch("/api/auth/customer", {
+      const checkRes = await fetch("/api/auth/customer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "FORGOT_PASSWORD_REQUEST",
-          mobile: cleanPhone,
-        }),
+        body: JSON.stringify({ action: "CHECK_FORGOT_USER", mobile: cleanPhone }),
       });
-      const data = await res.json();
-      if (data.success) {
-        setForgotStep("RESET");
-        setSuccessMsg(`Reset OTP sent to +91 ${cleanPhone}`);
-      } else {
-        setErrorMsg(data.error || "Mobile number not registered.");
+      const checkData = await checkRes.json();
+
+      if (!checkData.success) {
+        setErrorMsg(checkData.error || "Mobile number not registered.");
+        setLoading(false);
+        return;
       }
-    } catch {
-      setErrorMsg("Server error. Try again.");
+
+      if (!auth) throw new Error("Firebase Auth not initialized");
+      if (!recaptchaVerifierRef.current) {
+        recaptchaVerifierRef.current = new RecaptchaVerifier(
+          auth,
+          "recaptcha-container",
+          { size: "invisible" }
+        );
+      }
+
+      const confirmation = await signInWithPhoneNumber(
+        auth,
+        "+91" + cleanPhone,
+        recaptchaVerifierRef.current
+      );
+      confirmationResultRef.current = confirmation;
+
+      setForgotStep("OTP");
+      setSuccessMsg(`Firebase Reset OTP sent to +91 ${cleanPhone}`);
+    } catch (fbErr: any) {
+      setErrorMsg(fbErr.message || "Failed to send reset SMS.");
     } finally {
       setLoading(false);
     }
   };
 
-  // 5. FORGOT PASSWORD - RESET NEW PASSWORD
+  // 5. FORGOT PASSWORD - VERIFY OTP
+  const handleVerifyForgotOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg("");
+
+    if (forgotOtp.trim().length < 6) {
+      setErrorMsg("Enter valid 6-digit OTP.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      if (!confirmationResultRef.current) {
+        setErrorMsg("Session expired. Request new OTP.");
+        setLoading(false);
+        return;
+      }
+
+      await confirmationResultRef.current.confirm(forgotOtp.trim());
+      setForgotStep("RESET");
+      setSuccessMsg("OTP verified successfully! Enter new password.");
+    } catch {
+      setErrorMsg("Invalid OTP entered. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 6. FORGOT PASSWORD - RESET NEW PASSWORD
   const handleResetPasswordConfirm = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
 
-    if (!forgotOtp.trim() || newPassword.length < 6) {
-      setErrorMsg("Enter OTP and new password (min 6 characters).");
+    if (newPassword.length < 6) {
+      setErrorMsg("Password must be at least 6 characters.");
       return;
     }
 
@@ -231,22 +325,21 @@ export default function AuthPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "FORGOT_PASSWORD_RESET",
+          action: "RESET_PASSWORD_VERIFIED",
           mobile: forgotPhone.replace(/\D/g, "").slice(-10),
-          otp: forgotOtp.trim(),
           newPassword: newPassword,
         }),
       });
       const data = await res.json();
       if (data.success) {
-        setSuccessMsg("Password reset successfully! Please login with new password.");
+        setSuccessMsg("Password reset successfully! Please login.");
         setTimeout(() => {
           setMode("LOGIN");
           setForgotStep("REQUEST");
           setSuccessMsg("");
         }, 2000);
       } else {
-        setErrorMsg(data.error || "Invalid OTP or failed to reset password.");
+        setErrorMsg(data.error || "Failed to update password.");
       }
     } catch {
       setErrorMsg("Connection error.");
@@ -265,6 +358,8 @@ export default function AuthPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center px-4 py-10 font-sans">
+      <div id="recaptcha-container"></div>
+
       <div className="w-full max-w-md bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-8 space-y-6">
         <Link
           href="/"
@@ -279,18 +374,22 @@ export default function AuthPage() {
               ? "Welcome Back"
               : mode === "SIGNUP"
               ? signupStep === "OTP"
-                ? "Verify Mobile OTP"
+                ? "Verify Firebase SMS OTP"
                 : "Create Account"
-              : "Reset Password"}
+              : forgotStep === "OTP"
+              ? "Verify Reset OTP"
+              : forgotStep === "RESET"
+              ? "Set New Password"
+              : "Recover Account"}
           </h1>
           <p className="text-xs text-slate-500 font-medium mt-1">
             {mode === "LOGIN"
               ? "Login with your Email / Mobile & Password"
               : mode === "SIGNUP"
               ? signupStep === "OTP"
-                ? `Verification code sent to +91 ${mobile}`
-                : "Enter your full details to register"
-              : "Recover your account via OTP verification"}
+                ? `Enter the 6-digit code sent to +91 ${mobile}`
+                : "Register with real mobile number verification"
+              : "Secure password recovery via Firebase Auth"}
           </p>
         </div>
 
@@ -477,7 +576,7 @@ export default function AuthPage() {
                   disabled={loading}
                   className="w-full mt-2 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-black transition flex items-center justify-center gap-2 shadow-sm cursor-pointer"
                 >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send OTP & Register"}
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send Firebase SMS OTP"}
                 </button>
 
                 <div className="text-center pt-2">
@@ -496,7 +595,7 @@ export default function AuthPage() {
             ) : (
               <form onSubmit={handleVerifyOtpAndRegister} className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700">Enter Verification Code</label>
+                  <label className="text-xs font-bold text-slate-700">Enter Firebase SMS OTP</label>
                   <div className="relative">
                     <input
                       type="text"
@@ -504,7 +603,7 @@ export default function AuthPage() {
                       maxLength={6}
                       value={otp}
                       onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-                      placeholder="Enter 6-digit OTP"
+                      placeholder="6-digit SMS code"
                       className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black tracking-widest text-center focus:outline-emerald-600"
                     />
                     <KeyRound className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -513,10 +612,10 @@ export default function AuthPage() {
 
                 <button
                   type="submit"
-                  disabled={loading || otp.length < 4}
+                  disabled={loading || otp.length < 6}
                   className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-black transition flex items-center justify-center gap-2 shadow-sm cursor-pointer"
                 >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirm & Create Account"}
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify OTP & Create Account"}
                 </button>
 
                 <div className="flex justify-between items-center text-xs font-bold pt-1">
@@ -532,7 +631,7 @@ export default function AuthPage() {
                     onClick={handleSendSignupOtp}
                     className="text-emerald-600 hover:underline cursor-pointer"
                   >
-                    Resend OTP
+                    Resend SMS OTP
                   </button>
                 </div>
               </form>
@@ -543,7 +642,7 @@ export default function AuthPage() {
         {/* 3. FORGOT PASSWORD VIEW */}
         {mode === "FORGOT" && (
           <>
-            {forgotStep === "REQUEST" ? (
+            {forgotStep === "REQUEST" && (
               <form onSubmit={handleSendForgotOtp} className="space-y-4">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-700">Registered Mobile Number</label>
@@ -566,7 +665,7 @@ export default function AuthPage() {
                   disabled={loading}
                   className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-black transition flex items-center justify-center gap-2 shadow-sm cursor-pointer"
                 >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send Reset OTP"}
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send Firebase Reset OTP"}
                 </button>
 
                 <div className="text-center pt-2">
@@ -579,10 +678,12 @@ export default function AuthPage() {
                   </button>
                 </div>
               </form>
-            ) : (
-              <form onSubmit={handleResetPasswordConfirm} className="space-y-4">
+            )}
+
+            {forgotStep === "OTP" && (
+              <form onSubmit={handleVerifyForgotOtp} className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700">Enter OTP</label>
+                  <label className="text-xs font-bold text-slate-700">Enter Firebase SMS OTP</label>
                   <div className="relative">
                     <input
                       type="text"
@@ -590,13 +691,25 @@ export default function AuthPage() {
                       maxLength={6}
                       value={forgotOtp}
                       onChange={(e) => setForgotOtp(e.target.value.replace(/\D/g, ""))}
-                      placeholder="Enter 6-digit OTP"
+                      placeholder="6-digit SMS code"
                       className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black tracking-widest text-center focus:outline-emerald-600"
                     />
                     <KeyRound className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   </div>
                 </div>
 
+                <button
+                  type="submit"
+                  disabled={loading || forgotOtp.length < 6}
+                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-black transition flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+                >
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify OTP"}
+                </button>
+              </form>
+            )}
+
+            {forgotStep === "RESET" && (
+              <form onSubmit={handleResetPasswordConfirm} className="space-y-4">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-700">New Password</label>
                   <div className="relative">
@@ -619,16 +732,6 @@ export default function AuthPage() {
                 >
                   {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Update Password & Login"}
                 </button>
-
-                <div className="text-center pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setForgotStep("REQUEST")}
-                    className="text-xs text-slate-500 font-medium hover:text-slate-800 cursor-pointer"
-                  >
-                    Resend OTP or Change Number
-                  </button>
-                </div>
               </form>
             )}
           </>
@@ -636,7 +739,7 @@ export default function AuthPage() {
 
         <div className="pt-4 border-t border-slate-100 flex items-center justify-center gap-2 text-[11px] font-bold text-slate-400">
           <ShieldCheck className="w-4 h-4 text-emerald-600" />
-          <span>100% Secure &amp; Encrypted Authentication</span>
+          <span>Powered by Firebase Phone Authentication</span>
         </div>
       </div>
     </div>
