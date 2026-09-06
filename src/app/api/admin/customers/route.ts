@@ -4,96 +4,126 @@ import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-// 1. GET: Saare customers with metrics fetch karein
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const search = searchParams.get("search")?.toLowerCase() || "";
-    const filter = searchParams.get("filter") || "all"; // all, active, blocked
+    const search = (searchParams.get("search") || "").toLowerCase().trim();
+    const filter = (searchParams.get("filter") || "all").toLowerCase().trim();
 
-    // Registered users fetch karein with unke orders
+    // 1. Saare Users fetch karein (ADMIN role ko chhodkar sabhi shoppers)
     const users = await prisma.user.findMany({
+      where: {
+        NOT: {
+          role: "ADMIN",
+        },
+      },
       include: {
         orders: {
           select: {
+            id: true,
             totalAmount: true,
-            createdAt: true,
+          },
+        },
+        _count: {
+          select: {
+            orders: true,
           },
         },
       },
       orderBy: { createdAt: "desc" },
     });
 
-    // Metric Calculations
     let totalGMV = 0;
     let activeCount = 0;
     let blockedCount = 0;
 
-    const formattedCustomers = users.map((user) => {
-      const orderCount = user.orders?.length || 0;
-      const totalSpent =
-        user.orders?.reduce((acc, order) => acc + (order.totalAmount || 0), 0) || 0;
+    const formattedList = users.map((u) => {
+      const orders = u.orders || [];
+      const orderCount = u._count?.orders ?? orders.length;
+      
+      const totalSpent = orders.reduce(
+        (sum, ord) => sum + (Number(ord.totalAmount) || 0),
+        0
+      );
 
       totalGMV += totalSpent;
-      const isBlocked = Boolean((user as unknown as { isBlocked?: boolean }).isBlocked);
 
+      // Status resolution
+      const isBlocked = (u as any).isActive === false || Boolean((u as any).isBlocked);
       if (isBlocked) {
         blockedCount++;
       } else {
         activeCount++;
       }
 
+      const rawPhone = u.phone || "";
+      const cleanPhone = rawPhone.replace(/\D/g, "").slice(-10);
+
+      // Clean name
+      let displayName = u.name?.trim();
+      if (!displayName || displayName === "Direct Customer" || displayName === "Registered User" || displayName.startsWith("User ")) {
+        displayName = cleanPhone ? `Customer (${cleanPhone.slice(-4)})` : "Registered Shopper";
+      }
+
+      // Clean email representation
+      const isDummyStore = u.email?.includes("@catchbuddy.store");
+      const displayEmail = isDummyStore && cleanPhone ? `+91 ${cleanPhone}` : (u.email || "N/A");
+
       return {
-        id: user.id,
-        name: user.name || "Guest Customer",
-        email: user.email || "No Email",
-        phone: (user as unknown as { phone?: string }).phone || "N/A",
+        id: u.id,
+        name: displayName,
+        email: displayEmail,
+        phone: cleanPhone ? `+91 ${cleanPhone}` : (u.phone || "N/A"),
         ordersCount: orderCount,
-        totalSpent,
-        isBlocked,
-        createdAt: user.createdAt,
+        totalSpent: totalSpent,
+        isBlocked: isBlocked,
+        createdAt: u.createdAt,
       };
     });
 
-    // Search aur Status filtering
-    const filteredList = formattedCustomers.filter((c) => {
-      const matchesSearch =
-        c.name.toLowerCase().includes(search) ||
-        c.email.toLowerCase().includes(search) ||
-        c.phone.includes(search);
-
-      if (!matchesSearch) return false;
+    // 2. Tab Filter (all, active, blocked)
+    const tabFiltered = formattedList.filter((c) => {
       if (filter === "active") return !c.isBlocked;
       if (filter === "blocked") return c.isBlocked;
       return true;
+    });
+
+    // 3. Search Filter
+    const finalCustomers = tabFiltered.filter((c) => {
+      if (!search) return true;
+      return (
+        c.name.toLowerCase().includes(search) ||
+        c.email.toLowerCase().includes(search) ||
+        c.phone.includes(search)
+      );
     });
 
     return NextResponse.json(
       {
         success: true,
         metrics: {
-          totalCustomers: users.length,
+          totalCustomers: formattedList.length,
           activeBuyers: activeCount,
           blockedAccounts: blockedCount,
           totalCustomerSpend: totalGMV,
         },
-        customers: filteredList,
+        customers: finalCustomers,
       },
       {
         headers: {
-          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-          Pragma: "no-cache",
-          Expires: "0",
+          "Cache-Control": "no-store, no-cache, must-revalidate",
         },
       }
     );
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Failed to load customers";
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  } catch (error: any) {
+    console.error("CRM GET Error:", error);
+    return NextResponse.json(
+      { success: false, error: error?.message || "Failed to load CRM data" },
+      { status: 500 }
+    );
   }
 }
 
-// 2. PATCH: Customer ko Block ya Unblock karein
 export async function PATCH(req: Request) {
   try {
     const { customerId, isBlocked } = await req.json();
@@ -102,20 +132,20 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ success: false, error: "Customer ID is required" }, { status: 400 });
     }
 
-    const updatedUser = await prisma.user.update({
+    const updated = await prisma.user.update({
       where: { id: customerId },
       data: {
-        ...({ isBlocked } as unknown as object),
+        isActive: !isBlocked,
+        ...({ isBlocked } as any),
       },
     });
 
     return NextResponse.json({
       success: true,
-      message: `Customer account ${isBlocked ? "blocked" : "unblocked"} successfully.`,
-      user: updatedUser,
+      message: `Customer account ${isBlocked ? "blocked" : "unblocked"} successfully`,
+      user: updated,
     });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Failed to update status";
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error?.message || "Failed to update" }, { status: 500 });
   }
 }

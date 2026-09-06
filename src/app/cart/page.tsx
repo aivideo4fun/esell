@@ -19,6 +19,10 @@ import {
   Check,
   X,
   MapPin,
+  Banknote,
+  PackageCheck,
+  Copy,
+  ArrowRight,
 } from "lucide-react";
 
 interface CartItem {
@@ -56,6 +60,17 @@ export default function CartPage() {
   const [city, setCity] = useState("");
   const [pincode, setPincode] = useState("302020");
   const [fetchingCity, setFetchingCity] = useState(false);
+
+  // Payment Mode: Real Razorpay vs Temporary COD
+  const [paymentMode, setPaymentMode] = useState<"ONLINE" | "COD">("ONLINE");
+
+  // Order Success Modal State
+  const [placedOrderDetails, setPlacedOrderDetails] = useState<{
+    orderId: string;
+    amount: number;
+    paymentMode: string;
+  } | null>(null);
+  const [copied, setCopied] = useState(false);
 
   // Saved Addresses State
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
@@ -113,7 +128,6 @@ export default function CartPage() {
     }
   }, []);
 
-  // Fetch saved addresses and auto-fill default
   const fetchUserAddresses = async (email?: string, phoneNum?: string) => {
     try {
       const query = email ? `email=${encodeURIComponent(email)}` : `phone=${encodeURIComponent(phoneNum || "")}`;
@@ -135,7 +149,6 @@ export default function CartPage() {
     }
   };
 
-  // Auto-fetch City & State from Pincode
   const handlePincodeChange = async (val: string) => {
     const cleanPin = val.replace(/\D/g, "").slice(0, 6);
     setPincode(cleanPin);
@@ -174,7 +187,7 @@ export default function CartPage() {
   };
 
   // Pricing calculations
-  const shippingCharges = 60; // Standard shipping fee
+  const shippingCharges = 60;
   const subtotal = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
   const totalMrp = cart.reduce(
     (acc, item) => acc + (item.originalPrice || item.price * 1.4) * item.quantity,
@@ -183,7 +196,7 @@ export default function CartPage() {
   const discountAmount = appliedCoupon ? appliedCoupon.discountAmount : 0;
   const finalTotal = Math.max(1, subtotal + shippingCharges - discountAmount);
 
-  // Abandoned Cart Sync (Fixed to /api/cart/abandoned)
+  // Abandoned Cart Sync
   useEffect(() => {
     if (phone.length >= 10 && cart.length > 0) {
       if (abandonTimeoutRef.current) clearTimeout(abandonTimeoutRef.current);
@@ -236,7 +249,6 @@ export default function CartPage() {
     saveCart(updated);
   };
 
-  // Apply Coupon Logic
   const handleApplyCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!couponCode.trim()) return;
@@ -277,8 +289,8 @@ export default function CartPage() {
     setCouponError("");
   };
 
+  // Real DB Order Placement
   const createOrderInDb = async (paymentId: string) => {
-    // If entered new address, save in background
     if (selectedAddressId === "NEW" && (customerEmail || phone)) {
       try {
         await fetch("/api/customer/addresses", {
@@ -304,9 +316,19 @@ export default function CartPage() {
         addressLine1: address,
         city: city,
         pincode: pincode,
+        email: customerEmail || undefined,
+      },
+      customerDetails: {
+        name: name,
+        phone: phone,
+        address: address,
+        city: city,
+        pincode: pincode,
+        email: customerEmail || undefined,
       },
       items: cart.map((i) => ({
         productId: i.productId,
+        id: i.productId,
         price: i.price,
         quantity: i.quantity,
         selectedSize: i.selectedSize || null,
@@ -316,8 +338,8 @@ export default function CartPage() {
       discountAmount: discountAmount,
       shippingCharges: shippingCharges,
       couponCode: appliedCoupon ? appliedCoupon.code : null,
-      paymentStatus: "PAID",
-      orderStatus: "PROCESSING",
+      paymentMethod: paymentMode === "COD" ? "COD" : "ONLINE",
+      paymentStatus: paymentMode === "COD" ? "PENDING" : "SUCCESS",
       paymentId: paymentId,
     };
 
@@ -328,10 +350,22 @@ export default function CartPage() {
     });
 
     const data = await res.json();
-    return data?.order?.id || "ORD-" + Math.floor(100000 + Math.random() * 900000);
+
+    if (!res.ok || !data.success || !data.order) {
+      throw new Error(data.error || data.message || "Failed to place order in database");
+    }
+
+    return data.order.orderNumber || data.order.id;
   };
 
-  const handleOnlinePayment = async (e: React.FormEvent) => {
+  // Copy Order ID utility
+  const handleCopyOrderId = (id: string) => {
+    navigator.clipboard.writeText(id);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCheckoutSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (cart.length === 0) return;
 
@@ -345,41 +379,87 @@ export default function CartPage() {
       return;
     }
 
+    // 1. CASH ON DELIVERY (COD) FLOW
+    if (paymentMode === "COD") {
+      try {
+        setProcessingPayment(true);
+        const codPaymentId = `cod_${Date.now()}`;
+        const placedOrderId = await createOrderInDb(codPaymentId);
+
+        // Cart clear & show success screen
+        localStorage.removeItem("cb_cart");
+        window.dispatchEvent(new Event("storage"));
+        setPlacedOrderDetails({
+          orderId: placedOrderId,
+          amount: finalTotal,
+          paymentMode: "Cash on Delivery",
+        });
+      } catch (err: any) {
+        console.error("COD placement error:", err);
+        alert(err.message || "Failed to place COD order. Please try again.");
+      } finally {
+        setProcessingPayment(false);
+      }
+      return;
+    }
+
+    // 2. REAL RAZORPAY ONLINE FLOW
     try {
       setProcessingPayment(true);
+
+      const orderRes = await fetch("/api/checkout/create-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: finalTotal,
+          receipt: `rcpt_${Date.now()}`,
+        }),
+      });
+
+      const orderData = await orderRes.json();
+
+      if (!orderData.success || !orderData.orderId) {
+        alert(orderData.message || "Failed to initiate payment gateway. Please try again.");
+        setProcessingPayment(false);
+        return;
+      }
 
       const razorpayConstructor = typeof window !== "undefined" ? (window as any).Razorpay : undefined;
 
       if (!razorpayConstructor) {
-        const orderId = await createOrderInDb("pay_online_" + Date.now());
-        localStorage.removeItem("cb_cart");
-        window.dispatchEvent(new Event("storage"));
-        router.push(`/orders?placed=${orderId}`);
+        alert("Payment gateway SDK failed to load. Please refresh the page.");
+        setProcessingPayment(false);
         return;
       }
 
       const options: any = {
-        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_placeholder",
-        amount: finalTotal * 100,
-        currency: "INR",
+        key: orderData.key,
+        amount: orderData.amount,
+        currency: orderData.currency || "INR",
         name: "CatchBuddy",
         description: `Order for ${cart.length} item(s)`,
-        image: "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=200&q=80",
+        order_id: orderData.orderId,
+        image: "/logo.png",
         prefill: {
           name: name,
           contact: phone,
         },
         theme: {
-          color: "#059669",
+          color: "#16a34a",
         },
         handler: async function (response: any) {
           try {
             const placedOrderId = await createOrderInDb(response.razorpay_payment_id);
             localStorage.removeItem("cb_cart");
             window.dispatchEvent(new Event("storage"));
-            router.push(`/orders?placed=${placedOrderId}`);
-          } catch (err) {
-            console.error("Order error:", err);
+            setPlacedOrderDetails({
+              orderId: placedOrderId,
+              amount: finalTotal,
+              paymentMode: "Online Prepaid (Razorpay)",
+            });
+          } catch (err: any) {
+            console.error("Order completion error:", err);
+            alert(err.message || "Order registration failed.");
             router.push("/orders");
           }
         },
@@ -391,14 +471,14 @@ export default function CartPage() {
       };
 
       const rzp = new razorpayConstructor(options);
-      rzp.on("payment.failed", function (response: any) {
-        alert("Payment Failed: " + (response.error?.description || "Transaction cancelled"));
+      rzp.on("payment.failed", function (failResp: any) {
+        alert("Payment Failed: " + (failResp?.error?.description || "Transaction declined"));
         setProcessingPayment(false);
       });
       rzp.open();
-    } catch (err) {
-      console.error("Payment error:", err);
-      alert("Something went wrong while initiating payment. Please retry.");
+    } catch (err: any) {
+      console.error("Payment initiation error:", err);
+      alert(err.message || "Payment processing error. Please try again.");
       setProcessingPayment(false);
     }
   };
@@ -412,9 +492,86 @@ export default function CartPage() {
     );
   }
 
+  // ORDER SUCCESS SCREEN
+  if (placedOrderDetails) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center p-4 font-sans">
+        <div className="bg-white max-w-lg w-full rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm text-center space-y-6">
+          <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto ring-8 ring-emerald-50/60">
+            <PackageCheck className="w-9 h-9" />
+          </div>
+
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">
+              Order Confirmed
+            </span>
+            <h1 className="text-2xl font-black text-slate-950 pt-1">
+              Thank You For Your Order!
+            </h1>
+            <p className="text-xs text-slate-500 font-medium">
+              We have received your order and our dispatch team has begun preparing it.
+            </p>
+          </div>
+
+          {/* Order ID Box with Copy Action */}
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-left space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                Order ID
+              </span>
+              <button
+                type="button"
+                onClick={() => handleCopyOrderId(placedOrderDetails.orderId)}
+                className="inline-flex items-center gap-1 text-[11px] font-black text-emerald-600 hover:text-emerald-700 cursor-pointer"
+              >
+                {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                {copied ? "Copied!" : "Copy ID"}
+              </button>
+            </div>
+            <div className="font-mono text-sm sm:text-base font-black text-slate-900 break-all bg-white px-3 py-2 rounded-xl border border-slate-200 flex items-center justify-between">
+              <span>{placedOrderDetails.orderId}</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-1 text-xs border-t border-slate-200/70">
+              <div>
+                <span className="text-[10px] text-slate-400 block font-semibold">Total Paid</span>
+                <span className="font-black text-slate-900">₹{placedOrderDetails.amount.toLocaleString("en-IN")}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 block font-semibold">Payment Method</span>
+                <span className="font-black text-slate-900">{placedOrderDetails.paymentMode}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="text-[11px] text-slate-400 flex items-center justify-center gap-1">
+            <ShieldCheck className="w-4 h-4 text-emerald-600" />
+            <span>Updates and invoice will be sent via SMS / WhatsApp.</span>
+          </div>
+
+          {/* Action Buttons: Continue Shopping & Track Order */}
+          <div className="space-y-2.5 pt-2">
+            <Link
+              href="/"
+              className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+            >
+              Continue Shopping <ArrowRight className="w-4 h-4" />
+            </Link>
+
+            <Link
+              href={`/orders/track?q=${placedOrderDetails.orderId}`}
+              className="w-full py-3 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              Track Order Status
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] pb-24 text-slate-900 font-sans">
-      {/* Header */}
       <header className="sticky top-0 z-40 bg-white border-b border-slate-200 px-4 sm:px-8 py-3 shadow-xs">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <Link
@@ -423,7 +580,7 @@ export default function CartPage() {
           >
             <ArrowLeft className="w-4 h-4" /> Continue Shopping
           </Link>
-          <span className="text-sm font-black text-slate-950">
+          <span className="text-sm font-black text-slate-950 flex items-center gap-1">
             Catch<span className="text-emerald-600">Buddy</span> Checkout
           </span>
           <span className="text-xs font-bold text-emerald-700 flex items-center gap-1">
@@ -490,7 +647,7 @@ export default function CartPage() {
                           </div>
                           <button
                             onClick={() => removeItem(item.productId)}
-                            className="text-slate-400 hover:text-rose-600 p-1 transition"
+                            className="text-slate-400 hover:text-rose-600 p-1 transition cursor-pointer"
                             title="Remove"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -504,7 +661,7 @@ export default function CartPage() {
                           <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-slate-50">
                             <button
                               onClick={() => updateQuantity(item.productId, -1)}
-                              className="p-1.5 hover:bg-slate-200 text-slate-600 transition"
+                              className="p-1.5 hover:bg-slate-200 text-slate-600 transition cursor-pointer"
                             >
                               <Minus className="w-3 h-3" />
                             </button>
@@ -513,9 +670,7 @@ export default function CartPage() {
                             </span>
                             <button
                               onClick={() => updateQuantity(item.productId, 1)}
-                              disabled={item.quantity >= 9}
-                              className="p-1.5 hover:bg-slate-200 disabled:opacity-40 text-slate-600 transition"
-                              title={item.quantity >= 9 ? "Maximum 9 allowed" : "Add one"}
+                              className="p-1.5 hover:bg-slate-200 text-slate-600 transition cursor-pointer"
                             >
                               <Plus className="w-3 h-3" />
                             </button>
@@ -527,7 +682,7 @@ export default function CartPage() {
                 </div>
               </div>
 
-              {/* Delivery Address Section */}
+              {/* Delivery Address Form */}
               <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-2xs space-y-3">
                 <div className="flex items-center justify-between">
                   <h2 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
@@ -536,7 +691,6 @@ export default function CartPage() {
                   <span className="text-[10px] font-bold text-slate-400">Step 1 of 2</span>
                 </div>
 
-                {/* Saved Addresses Selector */}
                 {savedAddresses.length > 0 && (
                   <div className="space-y-2 mb-3">
                     <p className="text-[11px] font-bold text-slate-500">Select Delivery Location:</p>
@@ -584,7 +738,6 @@ export default function CartPage() {
                   </div>
                 )}
 
-                {/* Address Form Inputs */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   <input
                     type="text"
@@ -639,27 +792,56 @@ export default function CartPage() {
               </div>
             </div>
 
-            {/* Right Summary Column */}
+            {/* Right Summary & Payment Column */}
             <div className="lg:col-span-5 space-y-4">
-              <div className="bg-emerald-600 text-white rounded-2xl p-4 sm:p-5 shadow-sm space-y-2">
+              <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-2xs space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-emerald-100">
-                    PAYMENT METHOD
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    CHOOSE PAYMENT MODE
                   </span>
-                  <span className="bg-white/20 text-white text-[10px] font-black px-2 py-0.5 rounded-md backdrop-blur-xs">
-                    Prepaid Only
+                  <span className="text-[10px] bg-emerald-50 text-emerald-700 font-bold px-2 py-0.5 rounded-full">
+                    Step 2 of 2
                   </span>
                 </div>
-                <div className="flex items-center gap-3 pt-1">
-                  <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
-                    <CreditCard className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="text-xs font-black text-white">Instant Online Payment</h3>
-                    <p className="text-[11px] text-emerald-100 font-medium">
-                      UPI (GPay, PhonePe, Paytm), Cards &amp; NetBanking
-                    </p>
-                  </div>
+
+                <div className="grid grid-cols-2 gap-2.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMode("ONLINE")}
+                    className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                      paymentMode === "ONLINE"
+                        ? "border-emerald-600 bg-emerald-50/70 ring-2 ring-emerald-600/20"
+                        : "border-slate-200 bg-white hover:border-slate-300"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <CreditCard className={`w-4 h-4 ${paymentMode === "ONLINE" ? "text-emerald-600" : "text-slate-500"}`} />
+                      {paymentMode === "ONLINE" && <Check className="w-3.5 h-3.5 text-emerald-600" />}
+                    </div>
+                    <div className="mt-2">
+                      <p className="text-xs font-black text-slate-900">Prepaid (Razorpay)</p>
+                      <p className="text-[10px] text-emerald-700 font-bold mt-0.5">UPI, Cards, NetBanking</p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMode("COD")}
+                    className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                      paymentMode === "COD"
+                        ? "border-amber-500 bg-amber-50/70 ring-2 ring-amber-500/20"
+                        : "border-slate-200 bg-white hover:border-slate-300"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <Banknote className={`w-4 h-4 ${paymentMode === "COD" ? "text-amber-600" : "text-slate-500"}`} />
+                      {paymentMode === "COD" && <Check className="w-3.5 h-3.5 text-amber-600" />}
+                    </div>
+                    <div className="mt-2">
+                      <p className="text-xs font-black text-slate-900">Cash on Delivery</p>
+                      <p className="text-[10px] text-amber-700 font-bold mt-0.5">Pay at Doorstep / Testing</p>
+                    </div>
+                  </button>
                 </div>
               </div>
 
@@ -742,17 +924,26 @@ export default function CartPage() {
                 </div>
 
                 <button
-                  onClick={handleOnlinePayment}
-                  disabled={processingPayment}
-                  className="w-full mt-3 py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-black transition flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+                  type="button"
+                  onClick={handleCheckoutSubmit}
+                  disabled={processingPayment || cart.length === 0}
+                  className={`w-full mt-3 py-3.5 text-white rounded-xl text-xs font-black transition flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-50 ${
+                    paymentMode === "COD"
+                      ? "bg-amber-600 hover:bg-amber-500"
+                      : "bg-emerald-600 hover:bg-emerald-700"
+                  }`}
                 >
                   {processingPayment ? (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin" /> Processing Payment...
+                      <Loader2 className="w-4 h-4 animate-spin" /> Processing Order...
+                    </>
+                  ) : paymentMode === "COD" ? (
+                    <>
+                      <Banknote className="w-3.5 h-3.5" /> Place COD Order ₹{finalTotal.toLocaleString("en-IN")}
                     </>
                   ) : (
                     <>
-                      <Lock className="w-3.5 h-3.5" /> Pay Now ₹{finalTotal.toLocaleString("en-IN")}
+                      <Lock className="w-3.5 h-3.5" /> Pay Online ₹{finalTotal.toLocaleString("en-IN")}
                     </>
                   )}
                 </button>
@@ -762,7 +953,7 @@ export default function CartPage() {
                     <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> 256-bit Encrypted
                   </span>
                   <span className="flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Instant Refund Guarantee
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Instant Tracking
                   </span>
                 </div>
               </div>

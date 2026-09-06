@@ -1,7 +1,17 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Users, Search, RefreshCw, Loader2, Calendar, Phone, Mail, ShieldCheck } from "lucide-react";
+import {
+  Users,
+  Search,
+  RefreshCw,
+  Loader2,
+  Calendar,
+  Phone,
+  Mail,
+  ShieldCheck,
+  Download,
+} from "lucide-react";
 
 interface CustomerUser {
   id: string;
@@ -54,21 +64,78 @@ export default function CustomerLoginsPage() {
     return () => clearInterval(interval);
   }, [loadUsers]);
 
+  // Export to Excel (CSV) function
+  const exportToExcel = () => {
+    if (!users || users.length === 0) {
+      alert("No customer records found to export.");
+      return;
+    }
+
+    const headers = [
+      "Customer ID",
+      "Customer Name",
+      "Phone Number",
+      "Email Address",
+      "Status",
+      "Total Orders",
+      "Registration Date",
+    ];
+
+    const rows = users.map((u) => [
+      `"${u.id}"`,
+      `"${(u.name && u.name !== 'Direct Customer' ? u.name : (u.phone ? `Customer (${u.phone.slice(-4)})` : 'Customer')).replace(/"/g, '""')}"`,
+      `"${u.phone || 'N/A'}"`,
+      `"${u.email || 'N/A'}"`,
+      `"${u.isActive ? 'Active' : 'Inactive'}"`,
+      `"${u._count?.orders ?? 0}"`,
+      `"${new Date(u.createdAt).toLocaleDateString('en-IN')}"`,
+    ]);
+
+    const csvContent =
+      "data:text/csv;charset=utf-8," +
+      [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute(
+      "download",
+      `CatchBuddy_Customers_${new Date().toISOString().slice(0, 10)}.csv`
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
-    <div className="space-y-6 max-w-7xl mx-auto py-4">
+    <div className="space-y-6 max-w-7xl mx-auto py-4 font-sans">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-slate-950">Customer Logins &amp; Registered Accounts</h1>
+          <h1 className="text-2xl font-black text-slate-950">
+            Customer Logins &amp; Registered Accounts
+          </h1>
           <p className="text-xs text-slate-500 font-semibold mt-1">
             Realtime directory of shoppers who have logged in or created accounts on CatchBuddy.
           </p>
         </div>
-        <button
-          onClick={() => loadUsers(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer border border-slate-200"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
-        </button>
+        
+        {/* Action Buttons: Export & Refresh */}
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={exportToExcel}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl transition cursor-pointer shadow-xs"
+          >
+            <Download className="w-3.5 h-3.5" /> Export to Excel
+          </button>
+          <button
+            type="button"
+            onClick={() => loadUsers(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer border border-slate-200 shadow-2xs"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* Metrics Card */}
@@ -81,7 +148,9 @@ export default function CustomerLoginsPage() {
             <span className="text-2xl font-black text-slate-950">{totalCount}</span>
             <Users className="w-5 h-5 text-emerald-600" />
           </div>
-          <span className="text-[11px] text-emerald-600 font-medium mt-1 block">Active shopper profiles</span>
+          <span className="text-[11px] text-emerald-600 font-medium mt-1 block">
+            Active registered profiles
+          </span>
         </div>
       </div>
 
@@ -93,7 +162,7 @@ export default function CustomerLoginsPage() {
           placeholder="Search by name, email or phone..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:border-blue-600 outline-none"
+          className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:border-emerald-600 outline-none"
         />
       </div>
 
@@ -101,13 +170,15 @@ export default function CustomerLoginsPage() {
       <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
         {loading ? (
           <div className="py-16 text-center text-slate-500 flex flex-col items-center gap-2">
-            <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+            <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
             <span className="text-xs font-bold">Logins directory load ho rahi hai...</span>
           </div>
         ) : users.length === 0 ? (
           <div className="py-16 text-center text-slate-500 space-y-2">
             <Users className="w-8 h-8 text-slate-300 mx-auto" />
-            <p className="text-xs font-black text-slate-950">Abhi tak koi logged-in customer nahi mila.</p>
+            <p className="text-xs font-black text-slate-950">
+              Abhi tak koi logged-in customer nahi mila.
+            </p>
           </div>
         ) : (
           <table className="w-full text-left text-xs">
@@ -124,7 +195,13 @@ export default function CustomerLoginsPage() {
               {users.map((u) => (
                 <tr key={u.id} className="hover:bg-slate-50/60 transition">
                   <td className="p-4">
-                    <span className="font-black text-slate-950 block">{u.name || "Customer User"}</span>
+                    <span className="font-black text-slate-950 block">
+                      {u.name && u.name !== "Direct Customer"
+                        ? u.name
+                        : u.phone
+                        ? `Customer (${u.phone.slice(-4)})`
+                        : "Registered User"}
+                    </span>
                     <span className="text-[10px] text-slate-400 font-mono">{u.id}</span>
                   </td>
                   <td className="p-4 space-y-1">

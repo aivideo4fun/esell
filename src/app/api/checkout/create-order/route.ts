@@ -4,65 +4,40 @@ import Razorpay from "razorpay";
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const amount = Number(body.amount);
+    const { amount, receipt } = body;
 
-    if (!amount || isNaN(amount) || amount <= 0) {
+    const keyId = process.env.RAZORPAY_KEY_ID;
+    const keySecret = process.env.RAZORPAY_KEY_SECRET;
+
+    if (!keyId || !keySecret) {
       return NextResponse.json(
-        { success: false, error: "Invalid order amount" },
-        { status: 400 }
+        { success: false, message: "Razorpay keys are missing in environment variables (.env)" },
+        { status: 500 }
       );
     }
 
-    const keyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
-    const keySecret = process.env.RAZORPAY_KEY_SECRET;
+    const razorpay = new Razorpay({
+      key_id: keyId,
+      key_secret: keySecret,
+    });
 
-    // Agar real API keys configured nahi hain toh safe test mode chalega
-    if (!keyId || !keySecret || keyId.includes("placeholder") || keySecret.includes("secret")) {
-      return NextResponse.json({
-        success: true,
-        orderId: `order_test_${Date.now()}`,
-        amount: Math.round(amount * 100),
-        currency: "INR",
-        key: "test_mode",
-        isMock: true,
-      });
-    }
+    const order = await razorpay.orders.create({
+      amount: Math.round(Number(amount) * 100), // Razorpay accepts in paise
+      currency: "INR",
+      receipt: receipt || `rcpt_${Date.now()}`,
+    });
 
-    // Live / Real Razorpay instance
-    try {
-      const razorpay = new Razorpay({
-        key_id: keyId,
-        key_secret: keySecret,
-      });
-
-      const order = await razorpay.orders.create({
-        amount: Math.round(amount * 100),
-        currency: "INR",
-        receipt: `rcpt_${Date.now()}`,
-      });
-
-      return NextResponse.json({
-        success: true,
-        orderId: order.id,
-        amount: order.amount,
-        currency: order.currency,
-        key: keyId,
-      });
-    } catch (rzpErr: any) {
-      console.warn("Razorpay live init failed, falling back to instant order:", rzpErr?.message);
-      return NextResponse.json({
-        success: true,
-        orderId: `order_auto_${Date.now()}`,
-        amount: Math.round(amount * 100),
-        currency: "INR",
-        key: "test_mode",
-        isMock: true,
-      });
-    }
+    return NextResponse.json({
+      success: true,
+      orderId: order.id,
+      amount: order.amount,
+      currency: order.currency,
+      key: keyId,
+    });
   } catch (error: any) {
-    console.error("Order Creation Error:", error);
+    console.error("Razorpay order creation error:", error);
     return NextResponse.json(
-      { success: false, error: error?.message || "Failed to create order" },
+      { success: false, message: error?.message || "Failed to create Razorpay order" },
       { status: 500 }
     );
   }

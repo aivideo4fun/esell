@@ -11,7 +11,9 @@ import {
   Loader2, 
   RefreshCw,
   Eye,
-  X
+  X,
+  Truck,
+  SendHorizontal
 } from "lucide-react";
 
 interface OrderAddress {
@@ -42,6 +44,8 @@ interface AdminOrder {
   orderStatus?: string;
   status?: string;
   paymentStatus?: string;
+  trackingNumber?: string | null;
+  trackingUrl?: string | null;
   createdAt: string;
   user?: {
     name?: string;
@@ -59,10 +63,15 @@ export default function AdminOrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState<AdminOrder | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
+  // Tracking Dispatch States
+  const [courierName, setCourierName] = useState("Delhivery Express");
+  const [trackingIdInput, setTrackingIdInput] = useState("");
+  const [dispatchLoading, setDispatchLoading] = useState(false);
+
   const fetchOrders = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/admin/orders");
+      const res = await fetch("/api/admin/orders", { cache: "no-store" });
       const data = await res.json();
       if (data.success) {
         setOrders(data.orders || []);
@@ -104,6 +113,50 @@ export default function AdminOrdersPage() {
     }
   };
 
+  const handleAssignTracking = async () => {
+    if (!selectedOrder) return;
+    if (!trackingIdInput.trim()) {
+      alert("Kripya customer ke liye valid Tracking ID / AWB Number enter karein.");
+      return;
+    }
+
+    try {
+      setDispatchLoading(true);
+      const res = await fetch("/api/admin/orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId: selectedOrder.id,
+          orderStatus: "SHIPPED",
+          trackingNumber: trackingIdInput.trim(),
+          trackingUrl: courierName,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        alert(`AWB ${trackingIdInput.trim()} dispatch ho gayi! Order status SHIPPED kar diya gaya.`);
+        void fetchOrders();
+        setSelectedOrder((prev) =>
+          prev
+            ? {
+                ...prev,
+                orderStatus: "SHIPPED",
+                trackingNumber: trackingIdInput.trim(),
+                trackingUrl: courierName,
+              }
+            : null
+        );
+      } else {
+        alert(data.error || "Failed to update tracking");
+      }
+    } catch {
+      alert("Error saving tracking information");
+    } finally {
+      setDispatchLoading(false);
+    }
+  };
+
   const totalRevenue = orders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
   const pendingOrders = orders.filter(
     (o) =>
@@ -125,6 +178,8 @@ export default function AdminOrdersPage() {
         return "bg-green-100 text-green-800 border-green-300";
       case "SHIPPED":
         return "bg-blue-100 text-blue-800 border-blue-300";
+      case "RETURN_REQUESTED":
+        return "bg-purple-100 text-purple-800 border-purple-300";
       case "PROCESSING":
       case "PAID":
         return "bg-amber-100 text-amber-800 border-amber-300";
@@ -136,7 +191,7 @@ export default function AdminOrdersPage() {
   };
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto py-6 px-4">
+    <div className="space-y-8 max-w-7xl mx-auto py-6 px-4 font-sans">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-black">Customer Orders Manager</h1>
@@ -179,7 +234,7 @@ export default function AdminOrdersPage() {
       </div>
 
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
-        {["ALL", "PAID", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED"].map((st) => (
+        {["ALL", "PAID", "PROCESSING", "SHIPPED", "RETURN_REQUESTED", "DELIVERED", "CANCELLED"].map((st) => (
           <button
             key={st}
             onClick={() => setStatusFilter(st)}
@@ -217,7 +272,7 @@ export default function AdminOrdersPage() {
                   <th className="p-4">Customer Details</th>
                   <th className="p-4">Items</th>
                   <th className="p-4">Total &amp; Payment</th>
-                  <th className="p-4">Order Status</th>
+                  <th className="p-4">Tracking / Status</th>
                   <th className="p-4 text-right">Actions</th>
                 </tr>
               </thead>
@@ -278,7 +333,7 @@ export default function AdminOrdersPage() {
                         </span>
                       </td>
 
-                      <td className="p-4 align-top">
+                      <td className="p-4 align-top space-y-1.5">
                         <select
                           disabled={updatingId === order.id}
                           value={order.orderStatus || order.status || "PAID"}
@@ -290,17 +345,29 @@ export default function AdminOrdersPage() {
                           <option value="PAID">PAID</option>
                           <option value="PROCESSING">PROCESSING</option>
                           <option value="SHIPPED">SHIPPED</option>
+                          <option value="RETURN_REQUESTED">RETURN REQUESTED</option>
                           <option value="DELIVERED">DELIVERED</option>
                           <option value="CANCELLED">CANCELLED</option>
                         </select>
+                        {order.trackingNumber && (
+                          <div className="text-[10px] font-mono font-bold text-blue-700">
+                            AWB: {order.trackingNumber}
+                          </div>
+                        )}
                       </td>
 
                       <td className="p-4 align-top text-right">
                         <button
-                          onClick={() => setSelectedOrder(order)}
+                          onClick={() => {
+                            setSelectedOrder(order);
+                            setTrackingIdInput(order.trackingNumber || "");
+                            if (order.trackingUrl && !order.trackingUrl.startsWith("[")) {
+                              setCourierName(order.trackingUrl);
+                            }
+                          }}
                           className="inline-flex items-center gap-1 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-black text-xs font-bold rounded-lg transition cursor-pointer"
                         >
-                          <Eye className="w-3.5 h-3.5" /> View
+                          <Eye className="w-3.5 h-3.5" /> View &amp; Dispatch
                         </button>
                       </td>
                     </tr>
@@ -312,6 +379,7 @@ export default function AdminOrdersPage() {
         )}
       </div>
 
+      {/* View & Dispatch Modal */}
       {selectedOrder && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl border-2 border-gray-300 max-w-2xl w-full p-6 sm:p-8 space-y-6 max-h-[90vh] overflow-y-auto">
@@ -329,6 +397,60 @@ export default function AdminOrdersPage() {
                 className="p-2 hover:bg-gray-100 rounded-full transition text-black cursor-pointer"
               >
                 <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Admin Courier & Tracking Assignment Box */}
+            <div className="bg-blue-50 border-2 border-blue-200 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black text-blue-950 uppercase tracking-wider flex items-center gap-1.5">
+                  <Truck className="w-4 h-4 text-blue-600" /> Dispatch &amp; Live Tracking Setup
+                </h4>
+                {selectedOrder.trackingNumber ? (
+                  <span className="text-[10px] font-black px-2 py-0.5 bg-green-100 text-green-800 border border-green-300 rounded">
+                    TRACKING ACTIVE
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-black px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 rounded">
+                    NEEDS DISPATCH
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label className="text-[10px] font-bold text-gray-600 block mb-1">Courier Partner</label>
+                  <select
+                    value={courierName}
+                    onChange={(e) => setCourierName(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl text-xs font-bold text-black focus:outline-blue-600"
+                  >
+                    <option value="Delhivery Express">Delhivery Express</option>
+                    <option value="BlueDart Express">BlueDart Express</option>
+                    <option value="DTDC Surface">DTDC Surface</option>
+                    <option value="Shiprocket">Shiprocket Courier</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-600 block mb-1">AWB / Tracking Number</label>
+                  <input
+                    type="text"
+                    placeholder="Enter Tracking ID (e.g. DEL7891230)"
+                    value={trackingIdInput}
+                    onChange={(e) => setTrackingIdInput(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl text-xs font-bold text-black focus:outline-blue-600"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleAssignTracking}
+                disabled={dispatchLoading}
+                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black transition flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
+              >
+                {dispatchLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <SendHorizontal className="w-4 h-4" />}
+                <span>Save &amp; Dispatch Tracking to Customer</span>
               </button>
             </div>
 
@@ -386,20 +508,44 @@ export default function AdminOrdersPage() {
               </div>
             </div>
 
-            <div className="bg-gray-100 p-4 rounded-2xl space-y-1.5 text-xs font-bold text-black">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Subtotal:</span>
-                <span>₹{selectedOrder.totalAmount}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Shipping:</span>
-                <span className="text-green-700">FREE</span>
-              </div>
-              <div className="flex justify-between pt-2 border-t border-gray-300 text-sm font-black">
-                <span>Total Paid:</span>
-                <span className="text-blue-700">₹{selectedOrder.totalAmount}</span>
-              </div>
-            </div>
+            {/* Dynamic Items Subtotal & Shipping Calculation */}
+            {(() => {
+              const calculatedSubtotal =
+                selectedOrder.items?.reduce(
+                  (sum, item) => sum + (item.price || 0) * (item.quantity || 1),
+                  0
+                ) || selectedOrder.totalAmount;
+
+              const calculatedShipping = Math.max(
+                0,
+                selectedOrder.totalAmount - calculatedSubtotal
+              );
+
+              return (
+                <div className="bg-gray-100 p-4 rounded-2xl space-y-1.5 text-xs font-bold text-black">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Subtotal:</span>
+                    <span>₹{calculatedSubtotal.toLocaleString("en-IN")}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Shipping:</span>
+                    {calculatedShipping > 0 ? (
+                      <span className="text-black font-bold">
+                        ₹{calculatedShipping}
+                      </span>
+                    ) : (
+                      <span className="text-green-700">FREE</span>
+                    )}
+                  </div>
+                  <div className="flex justify-between pt-2 border-t border-gray-300 text-sm font-black">
+                    <span>Total Paid:</span>
+                    <span className="text-blue-700">
+                      ₹{selectedOrder.totalAmount.toLocaleString("en-IN")}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="flex justify-end">
               <button

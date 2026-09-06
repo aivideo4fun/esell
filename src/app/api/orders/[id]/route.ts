@@ -18,24 +18,29 @@ export async function GET(
       );
     }
 
-    // ID ya OrderNumber dono se search karein
+    const cleanId = id.trim();
+
+    // ID ya orderNumber dono se lookup karein
     const order = await prisma.order.findFirst({
       where: {
         OR: [
-          { id: id },
-          ...(id.startsWith("CB-") || id.startsWith("cb-")
-            ? [{ orderNumber: id }, { orderNumber: id.replace(/^CB-/i, "") }]
-            : [{ orderNumber: id }]),
+          { id: cleanId },
+          { orderNumber: cleanId },
+          { orderNumber: `CB-${cleanId.replace(/^CB-/i, "")}` },
+          { orderNumber: cleanId.replace(/^CB-/i, "") },
         ],
       },
       include: {
         user: true,
-        shippingAddress: true,
+        address: true, // shippingAddress ki jagah address use karein
+        payments: true,
         items: {
           include: {
             product: {
-              include: {
-                category: true,
+              select: {
+                title: true,
+                slug: true,
+                images: true,
               },
             },
           },
@@ -45,7 +50,7 @@ export async function GET(
 
     if (!order) {
       return NextResponse.json(
-        { success: false, error: "Order not found in database" },
+        { success: false, error: "Order record not found" },
         { status: 404 }
       );
     }

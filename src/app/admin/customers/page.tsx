@@ -11,6 +11,7 @@ import {
   Loader2,
   ShieldAlert,
   ShieldCheck,
+  Download,
 } from "lucide-react";
 
 interface Customer {
@@ -62,7 +63,9 @@ export default function CustomersCRMPage() {
         const data = await res.json();
         if (data.success) {
           setCustomers(data.customers || []);
-          setMetrics(data.metrics);
+          if (data.metrics) {
+            setMetrics(data.metrics);
+          }
         }
       } catch {
         console.error("Error fetching customers");
@@ -77,11 +80,11 @@ export default function CustomersCRMPage() {
   useEffect(() => {
     const debounceTimer = setTimeout(() => {
       void fetchCustomers(true);
-    }, 300);
+    }, 250);
     return () => clearTimeout(debounceTimer);
   }, [fetchCustomers]);
 
-  // Realtime Polling: Har 10 seconds me silently background update
+  // Realtime Polling: Har 10 seconds me background update
   useEffect(() => {
     const interval = setInterval(() => {
       void fetchCustomers(false);
@@ -119,9 +122,54 @@ export default function CustomersCRMPage() {
     }
   };
 
+  // Export to Excel / CSV feature
+  const exportCRMToExcel = () => {
+    if (!customers || customers.length === 0) {
+      alert("No customer records found to export.");
+      return;
+    }
+
+    const headers = [
+      "Customer ID",
+      "Customer Name",
+      "Phone Number",
+      "Email Address",
+      "Orders Placed",
+      "Lifetime Spend (INR)",
+      "Account Status",
+      "Joined Date",
+    ];
+
+    const rows = customers.map((c) => [
+      `"${c.id}"`,
+      `"${c.name.replace(/"/g, '""')}"`,
+      `"${c.phone}"`,
+      `"${c.email}"`,
+      `"${c.ordersCount}"`,
+      `"${c.totalSpent}"`,
+      `"${c.isBlocked ? "Blocked" : "Active"}"`,
+      `"${new Date(c.createdAt).toLocaleDateString("en-IN")}"`,
+    ]);
+
+    const csvContent =
+      "data:text/csv;charset=utf-8," +
+      [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute(
+      "download",
+      `CatchBuddy_CRM_Customers_${new Date().toISOString().slice(0, 10)}.csv`
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
-    <div className="space-y-6 max-w-7xl mx-auto py-4">
-      {/* Title & Refresh */}
+    <div className="space-y-6 max-w-7xl mx-auto py-4 font-sans">
+      {/* Title, Export to Excel & Refresh */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-950">Customer Management &amp; CRM</h1>
@@ -129,12 +177,23 @@ export default function CustomersCRMPage() {
             Directory of verified shoppers, lifetime order metrics, and fraud protection.
           </p>
         </div>
-        <button
-          onClick={() => fetchCustomers(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer border border-slate-200"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
-        </button>
+
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={exportCRMToExcel}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl transition cursor-pointer shadow-xs"
+          >
+            <Download className="w-3.5 h-3.5" /> Export to Excel
+          </button>
+          <button
+            type="button"
+            onClick={() => fetchCustomers(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer border border-slate-200 shadow-2xs"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* Metrics Cards */}
@@ -211,7 +270,7 @@ export default function CustomersCRMPage() {
             placeholder="Search by name, phone or email..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:border-blue-600 outline-none"
+            className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:border-emerald-600 outline-none"
           />
         </div>
       </div>
@@ -220,7 +279,7 @@ export default function CustomersCRMPage() {
       <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
         {loading ? (
           <div className="py-16 text-center text-slate-500 flex flex-col items-center gap-2">
-            <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+            <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
             <span className="text-xs font-bold">Customers load ho rahe hain...</span>
           </div>
         ) : customers.length === 0 ? (

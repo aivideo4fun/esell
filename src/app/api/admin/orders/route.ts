@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export async function GET() {
   try {
     const orders = await prisma.order.findMany({
@@ -23,11 +26,18 @@ export async function GET() {
       },
     });
 
-    return NextResponse.json({
-      success: true,
-      count: orders.length,
-      orders,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        count: orders.length,
+        orders,
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+        },
+      }
+    );
   } catch (error: any) {
     console.error("Error fetching admin orders:", error);
     return NextResponse.json(
@@ -40,7 +50,7 @@ export async function GET() {
 export async function PATCH(req: Request) {
   try {
     const body = await req.json();
-    const { orderId, orderStatus, supplierStatus, trackingNumber } = body;
+    const { orderId, orderStatus, supplierStatus, trackingNumber, trackingUrl } = body;
 
     if (!orderId) {
       return NextResponse.json(
@@ -52,7 +62,8 @@ export async function PATCH(req: Request) {
     const updateData: any = {};
     if (orderStatus) updateData.orderStatus = orderStatus;
     if (supplierStatus) updateData.supplierStatus = supplierStatus;
-    if (trackingNumber) updateData.trackingNumber = trackingNumber;
+    if (trackingNumber !== undefined) updateData.trackingNumber = trackingNumber ? trackingNumber.trim() : null;
+    if (trackingUrl !== undefined) updateData.trackingUrl = trackingUrl ? trackingUrl.trim() : null;
 
     const updatedOrder = await prisma.order.update({
       where: { id: orderId },
@@ -67,7 +78,11 @@ export async function PATCH(req: Request) {
       },
     });
 
-    return NextResponse.json({ success: true, order: updatedOrder });
+    return NextResponse.json({
+      success: true,
+      message: "Order updated successfully",
+      order: updatedOrder,
+    });
   } catch (error: any) {
     console.error("Error updating order:", error);
     return NextResponse.json(

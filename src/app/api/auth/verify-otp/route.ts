@@ -6,20 +6,28 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   try {
     const { identifier, phone, email, otp, name } = await req.json();
-    const target = (identifier || phone || email || "").trim();
+    const rawTarget = (identifier || phone || email || "").trim();
     const enteredOtp = (otp || "").trim();
 
-    if (!target || !enteredOtp) {
+    if (!rawTarget || !enteredOtp) {
       return NextResponse.json(
         { success: false, error: "Identifier and OTP are required" },
         { status: 400 }
       );
     }
 
+    const isEmail = rawTarget.includes("@");
+    const cleanPhone = isEmail ? "" : rawTarget.replace(/\D/g, "").slice(-10);
+    const target = isEmail ? rawTarget.toLowerCase() : cleanPhone;
+
+    // Verify OTP record
     const record = await prisma.verificationOtp.findFirst({
       where: {
-        identifier: target,
-        otp: enteredOtp,
+        OR: [
+          { identifier: rawTarget, otp: enteredOtp },
+          { identifier: target, otp: enteredOtp },
+          ...(cleanPhone ? [{ identifier: `+91${cleanPhone}`, otp: enteredOtp }] : []),
+        ],
       },
     });
 
@@ -41,8 +49,13 @@ export async function POST(req: Request) {
     // OTP verify hone ke baad record delete
     await prisma.verificationOtp.delete({ where: { id: record.id } });
 
-    const isEmail = target.includes("@");
-    const cleanPhone = target.replace("+91", "").trim();
+    // Customer Name & Email setup
+    const enteredName = name?.trim();
+    const fallbackName = isEmail
+      ? target.split("@")[0]
+      : `Shopper ${cleanPhone.slice(-4)}`;
+
+    const userEmail = isEmail ? target : `${cleanPhone}@catchbuddy.in`;
 
     // Database mein user dhundhein ya create karein
     let user = await prisma.user.findFirst({
@@ -52,12 +65,28 @@ export async function POST(req: Request) {
     if (!user) {
       user = await prisma.user.create({
         data: {
-          name: name?.trim() || (isEmail ? target.split("@")[0] : `User ${cleanPhone.slice(-4)}`),
-          email: isEmail ? target : `customer_${Date.now()}@catchbuddy.store`,
+          name: enteredName || fallbackName,
+          email: userEmail,
           phone: isEmail ? null : cleanPhone,
           role: "CUSTOMER",
+          isActive: true,
         },
       });
+    } else {
+      // Agar existing user ka naam default tha aur ab naya naam aaya hai toh update karein
+      const needsNameUpdate =
+        enteredName &&
+        (!user.name || user.name === "Direct Customer" || user.name.startsWith("User "));
+
+      if (needsNameUpdate) {
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            name: enteredName,
+            isActive: true,
+          },
+        });
+      }
     }
 
     const response = NextResponse.json({
@@ -81,6 +110,7 @@ export async function POST(req: Request) {
 
     return response;
   } catch (error: unknown) {
+    console.error("Verify OTP error:", error);
     const msg = error instanceof Error ? error.message : "Verification failed";
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
