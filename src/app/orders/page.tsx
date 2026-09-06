@@ -94,7 +94,6 @@ function OrdersContent() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] pb-24 text-slate-900 font-sans">
-      {/* 1. TOP HEADER WITH BACK BUTTON */}
       <header className="sticky top-0 z-40 bg-white border-b border-slate-200 px-4 sm:px-8 py-3 shadow-xs">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <Link
@@ -116,7 +115,6 @@ function OrdersContent() {
       </header>
 
       <main className="max-w-4xl mx-auto px-4 sm:px-8 mt-6 space-y-5">
-        {/* Success Alert if navigated from Cart checkout */}
         {justPlacedId && (
           <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex items-center gap-3 shadow-xs">
             <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
@@ -194,7 +192,6 @@ function OrdersContent() {
                     </div>
                   </div>
 
-                  {/* Items List */}
                   <div className="divide-y divide-slate-100">
                     {order.items?.map((item) => {
                       const itemTitle = item.product?.title || item.title || "CatchBuddy Product";
@@ -231,7 +228,6 @@ function OrdersContent() {
                     })}
                   </div>
 
-                  {/* Footer Action Links */}
                   <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
                     <span className="text-[11px] text-slate-500 font-medium">
                       Payment: <strong className="text-slate-800">{order.paymentStatus || "SUCCESS"}</strong>

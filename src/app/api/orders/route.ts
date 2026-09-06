@@ -5,11 +5,14 @@ import { sendFreeWhatsAppAlert } from "@/lib/whatsapp";
 
 export const dynamic = "force-dynamic";
 
-// 1. GET: Fetch Customer Orders
+// 1. GET: Fetch Customer Orders (Strict User Isolation)
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const orderIdParam = searchParams.get("orderId");
+
+    const cookieStore = await cookies();
+    const customerId = cookieStore.get("customer_id")?.value;
 
     if (orderIdParam) {
       const singleOrder = await prisma.order.findFirst({
@@ -19,6 +22,7 @@ export async function GET(req: Request) {
             { orderNumber: orderIdParam },
             { orderNumber: `CB-${orderIdParam}` },
           ],
+          ...(customerId ? { userId: customerId } : {}),
         },
         include: {
           address: true,
@@ -42,11 +46,13 @@ export async function GET(req: Request) {
       }
     }
 
-    const cookieStore = await cookies();
-    const customerId = cookieStore.get("customer_id")?.value;
+    // Security check: Agar customer_id cookie nahi hai, toh doosro ke orders bilkul na dikhayein
+    if (!customerId) {
+      return NextResponse.json({ success: true, orders: [] });
+    }
 
     const orders = await prisma.order.findMany({
-      where: customerId ? { userId: customerId } : {},
+      where: { userId: customerId },
       include: {
         address: true,
         payments: true,
@@ -72,7 +78,7 @@ export async function GET(req: Request) {
   }
 }
 
-// 2. POST: Order Placement (Extended Timeout + Fast Execution)
+// 2. POST: Order Placement
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -104,7 +110,6 @@ export async function POST(req: Request) {
     const cookieStore = await cookies();
     let currentUserId = cookieStore.get("customer_id")?.value || null;
 
-    // Smart User Lookup
     let existingUser = null;
     if (currentUserId) {
       existingUser = await prisma.user.findUnique({ where: { id: currentUserId } });
@@ -154,10 +159,8 @@ export async function POST(req: Request) {
     const parsedAmount = parseFloat(totalAmount) || 0;
     const isCOD = paymentMethod === "COD";
 
-    // Transaction with 15-second timeout configuration
     const newOrder = await prisma.$transaction(
       async (tx) => {
-        // 1. Stock Decrement
         for (const item of items) {
           const pId = item.productId || item.id;
           const qty = item.quantity || 1;
@@ -166,12 +169,9 @@ export async function POST(req: Request) {
               where: { id: pId },
               data: { stock: { decrement: qty } },
             });
-          } catch {
-            // Agar product stock decrement skip ho sake toh gracefully continue karein
-          }
+          } catch {}
         }
 
-        // 2. Address Creation
         const createdAddress = await tx.address.create({
           data: {
             fullName: custName,
@@ -184,7 +184,6 @@ export async function POST(req: Request) {
           },
         });
 
-        // 3. Order Creation
         return await tx.order.create({
           data: {
             orderNumber,
@@ -219,12 +218,11 @@ export async function POST(req: Request) {
         });
       },
       {
-        maxWait: 15000, // 15 seconds wait time
-        timeout: 15000, // 15 seconds execution time
+        maxWait: 15000,
+        timeout: 15000,
       }
     );
 
-    // WhatsApp Alert (Background trigger)
     try {
       sendFreeWhatsAppAlert({
         orderId: newOrder.orderNumber || newOrder.id,
@@ -237,12 +235,23 @@ export async function POST(req: Request) {
       }).catch((err) => console.error("WA Background err:", err));
     } catch {}
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       order: newOrder,
       orderId: newOrder.id,
       orderNumber: newOrder.orderNumber,
     });
+
+    if (currentUserId) {
+      response.cookies.set("customer_id", currentUserId, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 60 * 60 * 24 * 365, // 1 year
+      });
+    }
+
+    return response;
   } catch (error: unknown) {
     console.error("Order creation error:", error);
     const message = error instanceof Error ? error.message : "Failed to place order";

@@ -3,7 +3,6 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-// Smart Icon Mapping for Admin Categories
 function getCategoryIcon(name: string, icon: string | null): string {
   if (icon && icon.trim()) return icon;
 
@@ -28,21 +27,21 @@ function getCategoryIcon(name: string, icon: string | null): string {
 
 export async function GET() {
   try {
-    // 1. Fetch Admin Categories with smart ordering
-    const rawCategories = await prisma.category.findMany({
-      take: 12,
-      orderBy: [
-        { displayOrder: "asc" },
-        { createdAt: "desc" },
-      ],
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        icon: true,
-      },
+    // 1. Fetch top 8 Main Categories (where parentId is null)
+    let rawCategories = await prisma.category.findMany({
+      where: { parentId: null },
+      take: 8, // Limit increased from 6 to 8
+      orderBy: { createdAt: "desc" },
+      select: { id: true, name: true, slug: true, icon: true },
     });
 
+    if (rawCategories.length === 0) {
+      rawCategories = await prisma.category.findMany({
+        take: 8, // Limit increased from 6 to 8
+        orderBy: { createdAt: "desc" },
+        select: { id: true, name: true, slug: true, icon: true },
+      });
+    }
     const categories = rawCategories.map((c) => ({
       id: c.id,
       name: c.name,
@@ -50,52 +49,55 @@ export async function GET() {
       icon: getCategoryIcon(c.name, c.icon),
     }));
 
-    // 2. Fetch Active Featured Products
+    // Fetch products including full images relation
     const products = await prisma.product.findMany({
-      where: { isActive: true },
       take: 8,
       orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        title: true,
-        slug: true,
-        price: true,
-        originalPrice: true,
-        badge: true,
-        rating: true,
-        reviewCount: true,
-        images: {
-          select: { url: true },
-          take: 1,
-        },
+      include: {
+        images: true, // Saari images fetch hongi taaki pehli image sahi se mil sake
       },
     });
 
-    const formattedProducts = products.map((p) => {
-      const discount =
-        p.originalPrice > p.price
-          ? `${Math.round(((p.originalPrice - p.price) / p.originalPrice) * 100)}% OFF`
-          : null;
+    const formattedProducts = products.map((p: any) => {
+      const price = p.price || 0;
+      const mrp = p.originalPrice || p.mrp || Math.round(price * 1.3);
+      const discount = mrp > price ? `${Math.round(((mrp - price) / mrp) * 100)}% OFF` : "SPECIAL";
+
+      // Proper Image Extractor from Prisma relation or string fields
+      let img = "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=400&q=80";
+      if (Array.isArray(p.images) && p.images.length > 0) {
+        const first = p.images[0];
+        if (typeof first === "string") img = first;
+        else if (first?.url) img = first.url;
+      } else if (typeof p.image === "string") {
+        img = p.image;
+      } else if (typeof p.imageUrl === "string") {
+        img = p.imageUrl;
+      }
 
       return {
         id: p.id,
-        slug: p.slug,
-        title: p.title,
-        price: p.price,
-        mrp: p.originalPrice,
-        discount: discount || p.badge || "DEAL",
+        slug: p.slug || p.id,
+        title: p.title || p.name || "Product",
+        price: price,
+        mrp: mrp,
+        discount: p.badge || discount,
         rating: p.rating || 4.5,
         reviews: p.reviewCount ? `${p.reviewCount}` : "120+",
-        image:
-          p.images?.[0]?.url ||
-          "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=400&q=80",
+        image: img,
       };
     });
+
+    const activeCoupon = await prisma.coupon.findFirst({
+      where: { isActive: true },
+      orderBy: { createdAt: "desc" },
+    }).catch(() => null);
 
     return NextResponse.json({
       success: true,
       categories: categories.length > 0 ? categories : null,
       products: formattedProducts.length > 0 ? formattedProducts : null,
+      coupon: activeCoupon || null,
     });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Internal error";
@@ -103,6 +105,7 @@ export async function GET() {
       success: false,
       categories: null,
       products: null,
+      coupon: null,
       error: msg,
     });
   }
