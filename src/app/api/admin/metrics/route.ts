@@ -22,12 +22,16 @@ export async function GET() {
     );
 
     // 2. Prepaid Orders count
-    const prepaidOrdersCount = await prisma.order.count({
-      where: {
-        paymentMethod: { not: "COD" },
-        paymentStatus: { in: ["PAID", "COMPLETED", "SUCCESS"] },
-      },
-    });
+const prepaidOrdersCount = await prisma.order.count({
+        where: {
+          payments: {
+            some: {
+              gateway: { not: "COD" },
+            },
+          },
+          paymentStatus: { in: ["PAID", "COMPLETED", "SUCCESS"] },
+        },
+      });
 
     // 3. Pending Dispatch Orders count
     const pendingDispatchCount = await prisma.order.count({
