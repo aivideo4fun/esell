@@ -46,11 +46,14 @@ export default function AuthPage() {
   const [forgotPhone, setForgotPhone] = useState("");
   const [forgotOtp, setForgotOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
 
   // Visibility Toggles
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -87,6 +90,22 @@ export default function AuthPage() {
       }
     };
   }, []);
+
+  // Strong Password Validator Helper
+  const validateStrongPassword = (pass: string) => {
+    const minLength = pass.length >= 8;
+    const hasUppercase = /[A-Z]/.test(pass);
+    const hasLowercase = /[a-z]/.test(pass);
+    const hasNumber = /[0-9]/.test(pass);
+    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(pass);
+
+    if (!minLength) return "Password must be at least 8 characters long.";
+    if (!hasUppercase) return "Password must contain at least one uppercase letter (A-Z).";
+    if (!hasLowercase) return "Password must contain at least one lowercase letter (a-z).";
+    if (!hasNumber) return "Password must contain at least one number (0-9).";
+    if (!hasSpecialChar) return "Password must contain at least one special character (!@#$%^&*...).";
+    return null;
+  };
 
   // 1. STRICT LOGIN HANDLER
   const handleLogin = async (e: React.FormEvent) => {
@@ -139,8 +158,13 @@ export default function AuthPage() {
 
     const cleanMobile = mobile.replace(/\D/g, "").slice(-10);
 
-    if (!fullName.trim() || !email.trim() || cleanMobile.length !== 10 || password.length < 6) {
-      setErrorMsg("Please fill all fields properly (Password min 6 chars, Mobile 10 digits).");
+    const passError = validateStrongPassword(password);
+    if (passError) {
+      setErrorMsg(passError);
+      return;
+    }
+    if (!fullName.trim() || !email.trim() || cleanMobile.length !== 10) {
+      setErrorMsg("Please fill all fields properly.");
       return;
     }
     if (password !== confirmPassword) {
@@ -197,10 +221,9 @@ export default function AuthPage() {
         return;
       }
 
-      // Verify via Firebase SDK
+      // Verify via Firebase SDK (Strict Real Verification)
       await confirmationResultRef.current.confirm(otp.trim());
 
-      // Save to database
       const res = await fetch("/api/auth/customer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -281,7 +304,7 @@ export default function AuthPage() {
     }
   };
 
-  // 5. FORGOT PASSWORD - VERIFY OTP
+  // 5. FORGOT PASSWORD - STRICT FIREBASE OTP VERIFICATION
   const handleVerifyForgotOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
@@ -299,23 +322,30 @@ export default function AuthPage() {
         return;
       }
 
+      // Strict Firebase Verification (No dummy allowed)
       await confirmationResultRef.current.confirm(forgotOtp.trim());
       setForgotStep("RESET");
-      setSuccessMsg("OTP verified successfully! Enter new password.");
+      setSuccessMsg("OTP verified successfully! Set your new password.");
     } catch {
-      setErrorMsg("Invalid OTP entered. Please try again.");
+      setErrorMsg("Invalid OTP entered. Please check your SMS.");
     } finally {
       setLoading(false);
     }
   };
 
-  // 6. FORGOT PASSWORD - RESET NEW PASSWORD
+  // 6. FORGOT PASSWORD - RESET NEW PASSWORD WITH 2-TIME CONFIRMATION & STRONG POLICY
   const handleResetPasswordConfirm = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
 
-    if (newPassword.length < 6) {
-      setErrorMsg("Password must be at least 6 characters.");
+    const passError = validateStrongPassword(newPassword);
+    if (passError) {
+      setErrorMsg(passError);
+      return;
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      setErrorMsg("New passwords do not match. Please re-enter carefully.");
       return;
     }
 
@@ -332,12 +362,15 @@ export default function AuthPage() {
       });
       const data = await res.json();
       if (data.success) {
-        setSuccessMsg("Password reset successfully! Please login.");
+        setSuccessMsg("Password reset successfully! Please login with your new password.");
         setTimeout(() => {
           setMode("LOGIN");
           setForgotStep("REQUEST");
           setSuccessMsg("");
-        }, 2000);
+          setNewPassword("");
+          setConfirmNewPassword("");
+          setForgotOtp("");
+        }, 2500);
       } else {
         setErrorMsg(data.error || "Failed to update password.");
       }
@@ -388,7 +421,7 @@ export default function AuthPage() {
               : mode === "SIGNUP"
               ? signupStep === "OTP"
                 ? `Enter the 6-digit code sent to +91 ${mobile}`
-                : "Register with real mobile number verification"
+                : "Password must have Uppercase, Number & Special Character"
               : "Secure password recovery via Firebase Auth"}
           </p>
         </div>
@@ -528,14 +561,14 @@ export default function AuthPage() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-700">Password</label>
+                  <label className="text-xs font-bold text-slate-700">Password (Strong)</label>
                   <div className="relative">
                     <input
                       type={showPassword ? "text" : "password"}
                       required
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Minimum 6 characters"
+                      placeholder="Min 8 chars, A-Z, 0-9, special char"
                       className="w-full pl-9 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-emerald-600"
                     />
                     <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -711,17 +744,46 @@ export default function AuthPage() {
             {forgotStep === "RESET" && (
               <form onSubmit={handleResetPasswordConfirm} className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700">New Password</label>
+                  <label className="text-xs font-bold text-slate-700">New Strong Password</label>
                   <div className="relative">
                     <input
-                      type="password"
+                      type={showNewPassword ? "text" : "password"}
                       required
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="Enter new password (min 6 chars)"
-                      className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-emerald-600"
+                      placeholder="Min 8 chars, A-Z, 0-9, special char"
+                      className="w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-emerald-600"
                     />
                     <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700">Confirm New Password</label>
+                  <div className="relative">
+                    <input
+                      type={showConfirmNewPassword ? "text" : "password"}
+                      required
+                      value={confirmNewPassword}
+                      onChange={(e) => setConfirmNewPassword(e.target.value)}
+                      placeholder="Re-enter new password"
+                      className="w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-emerald-600"
+                    />
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmNewPassword(!showConfirmNewPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      {showConfirmNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
                   </div>
                 </div>
 
@@ -739,7 +801,7 @@ export default function AuthPage() {
 
         <div className="pt-4 border-t border-slate-100 flex items-center justify-center gap-2 text-[11px] font-bold text-slate-400">
           <ShieldCheck className="w-4 h-4 text-emerald-600" />
-          <span>Powered by Firebase Phone Authentication</span>
+          <span>Strict Password Policy & Firebase Auth</span>
         </div>
       </div>
     </div>
