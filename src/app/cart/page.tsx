@@ -58,7 +58,7 @@ export default function CartPage() {
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [city, setCity] = useState("");
-  const [pincode, setPincode] = useState("302020");
+  const [pincode, setPincode] = useState("");
   const [fetchingCity, setFetchingCity] = useState(false);
 
   // Payment Mode: Real Razorpay vs Temporary COD

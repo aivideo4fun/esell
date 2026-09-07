@@ -29,13 +29,7 @@ export async function GET(req: Request) {
           payments: true,
           items: {
             include: {
-              product: {
-                select: {
-                  title: true,
-                  slug: true,
-                  images: true,
-                },
-              },
+              product: { select: { title: true, slug: true, images: true } },
             },
           },
         },
@@ -46,7 +40,6 @@ export async function GET(req: Request) {
       }
     }
 
-    // Security check: Agar customer_id cookie nahi hai, toh doosro ke orders bilkul na dikhayein
     if (!customerId) {
       return NextResponse.json({ success: true, orders: [] });
     }
@@ -58,13 +51,7 @@ export async function GET(req: Request) {
         payments: true,
         items: {
           include: {
-            product: {
-              select: {
-                title: true,
-                slug: true,
-                images: true,
-              },
-            },
+            product: { select: { title: true, slug: true, images: true } },
           },
         },
       },
@@ -78,82 +65,48 @@ export async function GET(req: Request) {
   }
 }
 
-// 2. POST: Order Placement
+// 2. POST: Order Placement (Strict Security - No unauthenticated orders allowed)
 export async function POST(req: Request) {
   try {
+    const cookieStore = await cookies();
+    const customerIdCookie = cookieStore.get("customer_id")?.value;
+
     const body = await req.json();
-    const {
-      items,
-      customerDetails,
-      customer,
-      paymentMethod,
-      paymentId,
-      totalAmount,
-    } = body;
+    const { userId, items, customerDetails, paymentMethod, paymentId, totalAmount } = body;
+
+    // Strict Security Check: Request ke sath valid logged-in user ki ID ya cookie honi hi chahiye
+    const activeUserId = customerIdCookie || userId;
+
+    if (!activeUserId) {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized! Please login to your account to place an order." },
+        { status: 401 }
+      );
+    }
+
+    // Verify karein ki user database mein real mein exist karta hai ya nahi
+    const existingUser = await prisma.user.findUnique({
+      where: { id: activeUserId },
+    });
+
+    if (!existingUser) {
+      return NextResponse.json(
+        { success: false, error: "Invalid user session. Please login again." },
+        { status: 401 }
+      );
+    }
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json(
-        { success: false, error: "Cart me items hone zaroori hain" },
+        { success: false, error: "Cart mein items hone zaroori hain" },
         { status: 400 }
       );
     }
 
-    const cust = customerDetails || customer || {};
-    const rawPhone = cust.phone?.toString().trim() || "";
+    const cust = customerDetails || {};
+    const rawPhone = cust.phone?.toString().trim() || existingUser.phone || "";
     const cleanPhone = rawPhone.replace(/\D/g, "").slice(-10);
-    const custName =
-      cust.fullName?.trim() ||
-      cust.name?.trim() ||
-      (cleanPhone ? `Customer (${cleanPhone.slice(-4)})` : "CatchBuddy Shopper");
-    const custEmail = cust.email?.trim() || (cleanPhone ? `${cleanPhone}@catchbuddy.in` : null);
-
-    const cookieStore = await cookies();
-    let currentUserId = cookieStore.get("customer_id")?.value || null;
-
-    let existingUser = null;
-    if (currentUserId) {
-      existingUser = await prisma.user.findUnique({ where: { id: currentUserId } });
-    }
-
-    if (!existingUser && cleanPhone) {
-      existingUser = await prisma.user.findFirst({
-        where: {
-          OR: [
-            { phone: cleanPhone },
-            { phone: `+91${cleanPhone}` },
-            { phone: `0${cleanPhone}` },
-            ...(custEmail ? [{ email: custEmail }] : []),
-          ],
-        },
-      });
-    }
-
-    if (existingUser) {
-      currentUserId = existingUser.id;
-      if (
-        custName &&
-        (!existingUser.name ||
-          existingUser.name === "Direct Customer" ||
-          existingUser.name === "Registered User" ||
-          existingUser.name.startsWith("User "))
-      ) {
-        await prisma.user.update({
-          where: { id: existingUser.id },
-          data: { name: custName, phone: cleanPhone || existingUser.phone },
-        });
-      }
-    } else {
-      const newUser = await prisma.user.create({
-        data: {
-          name: custName,
-          phone: cleanPhone || null,
-          email: custEmail || `user_${cleanPhone || Date.now()}@catchbuddy.in`,
-          role: "CUSTOMER",
-          isActive: true,
-        },
-      });
-      currentUserId = newUser.id;
-    }
+    const custName = cust.fullName?.trim() || existingUser.name || "CatchBuddy Shopper";
 
     const orderNumber = `CB-${Date.now().toString().slice(-6)}`;
     const parsedAmount = parseFloat(totalAmount) || 0;
@@ -176,11 +129,11 @@ export async function POST(req: Request) {
           data: {
             fullName: custName,
             phone: cleanPhone || "0000000000",
-            street: cust.street || cust.address || cust.addressLine1 || "Local Delivery",
+            street: cust.street || "Local Delivery",
             city: cust.city || "Jaipur",
             state: cust.state || "Rajasthan",
             pincode: cust.pincode || "302020",
-            userId: currentUserId,
+            userId: existingUser.id,
           },
         });
 
@@ -191,7 +144,7 @@ export async function POST(req: Request) {
             paymentStatus: isCOD ? "PENDING" : "SUCCESS",
             orderStatus: "PROCESSING",
             addressId: createdAddress.id,
-            userId: currentUserId,
+            userId: existingUser.id,
             payments: {
               create: {
                 gateway: isCOD ? "COD" : "RAZORPAY",
@@ -210,17 +163,10 @@ export async function POST(req: Request) {
               })),
             },
           },
-          include: {
-            items: true,
-            address: true,
-            payments: true,
-          },
+          include: { items: true, address: true, payments: true },
         });
       },
-      {
-        maxWait: 15000,
-        timeout: 15000,
-      }
+      { maxWait: 15000, timeout: 15000 }
     );
 
     try {
@@ -242,14 +188,12 @@ export async function POST(req: Request) {
       orderNumber: newOrder.orderNumber,
     });
 
-    if (currentUserId) {
-      response.cookies.set("customer_id", currentUserId, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 60 * 60 * 24 * 365, // 1 year
-      });
-    }
+    response.cookies.set("customer_id", existingUser.id, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 365,
+    });
 
     return response;
   } catch (error: unknown) {

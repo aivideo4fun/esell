@@ -1,8 +1,9 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { 
   ShoppingBag, 
   Heart, 
@@ -20,7 +21,9 @@ interface ProductImage {
 }
 
 interface ProductCategory {
+  id: string;
   name: string;
+  slug: string;
 }
 
 interface Product {
@@ -44,8 +47,12 @@ interface Banner {
   isActive: boolean;
 }
 
-export default function ShopPage() {
+function ShopContent() {
+  const searchParams = useSearchParams();
+  const catSlugParam = searchParams.get("category");
+
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [banners, setBanners] = useState<Banner[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -55,12 +62,22 @@ export default function ShopPage() {
   const cart = useCart();
   const { wishlist, toggleWishlist } = useWishlist();
 
+  // Sync selected category from URL search params
+  useEffect(() => {
+    if (catSlugParam) {
+      setSelectedCategory(catSlugParam);
+    } else {
+      setSelectedCategory("ALL");
+    }
+  }, [catSlugParam]);
+
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [prodRes, bannerRes] = await Promise.all([
+        const [prodRes, catRes, bannerRes] = await Promise.all([
           fetch("/api/products", { cache: "no-store" }),
+          fetch("/api/admin/categories", { cache: "no-store" }),
           fetch("/api/admin/banners", { cache: "no-store" }),
         ]);
 
@@ -69,6 +86,11 @@ export default function ShopPage() {
           setProducts(prodData.products);
         } else if (Array.isArray(prodData)) {
           setProducts(prodData);
+        }
+
+        const catData = await catRes.json();
+        if (catData.success && Array.isArray(catData.categories)) {
+          setCategories(catData.categories);
         }
 
         const bannerData = await bannerRes.json();
@@ -85,14 +107,13 @@ export default function ShopPage() {
     void fetchData();
   }, []);
 
-  const rawCategories = products
-    .map((p) => p.category?.name)
-    .filter((name): name is string => typeof name === "string" && Boolean(name));
-
-  const categories = ["ALL", ...Array.from(new Set(rawCategories))];
-
   const filteredProducts = products.filter((item) => {
-    const matchesCategory = selectedCategory === "ALL" || item.category?.name === selectedCategory;
+    const itemCatSlug = item.category?.slug || item.category?.name?.toLowerCase().replace(/\s+/g, "-");
+    const matchesCategory = 
+      selectedCategory === "ALL" || 
+      item.category?.name === selectedCategory || 
+      itemCatSlug === selectedCategory;
+
     const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesCategory && matchesSearch;
   });
@@ -154,7 +175,7 @@ export default function ShopPage() {
           </div>
         </div>
 
-        {/* PROMOTIONAL BANNER (LIVE CMS SYNCED) */}
+        {/* PROMOTIONAL BANNER */}
         {activeShopBanner && (
           <Link
             href={activeShopBanner.linkUrl || "/shop"}
@@ -186,19 +207,32 @@ export default function ShopPage() {
 
         {/* Categories Bar */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
-          {categories.map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold shrink-0 transition cursor-pointer border ${
-                selectedCategory === cat
-                  ? "bg-slate-900 text-white border-slate-900"
-                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
+          <Link
+            href="/shop"
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold shrink-0 transition border ${
+              selectedCategory === "ALL"
+                ? "bg-slate-900 text-white border-slate-900"
+                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
+            }`}
+          >
+            ALL
+          </Link>
+          {categories.map((cat) => {
+            const isSelected = selectedCategory === cat.name || selectedCategory === cat.slug;
+            return (
+              <Link
+                key={cat.id}
+                href={`/shop?category=${cat.slug}`}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold shrink-0 transition border ${
+                  isSelected
+                    ? "bg-slate-900 text-white border-slate-900"
+                    : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
+                }`}
+              >
+                {cat.name}
+              </Link>
+            );
+          })}
         </div>
 
         {/* Product Grid */}
@@ -306,5 +340,13 @@ export default function ShopPage() {
 
       </div>
     </div>
+  );
+}
+
+export default function ShopPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-emerald-600" /></div>}>
+      <ShopContent />
+    </Suspense>
   );
 }

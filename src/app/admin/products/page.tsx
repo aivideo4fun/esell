@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   Plus,
   Trash2,
@@ -17,6 +17,8 @@ import {
   Check,
   CheckSquare,
   Square,
+  FolderInput,
+  Search,
 } from "lucide-react";
 
 interface ProductImage {
@@ -45,6 +47,7 @@ interface AdminProduct {
   badge?: string;
   category?: ProductCategory;
   images?: ProductImage[];
+  stock?: number;
 }
 
 const AVAILABLE_SIZES = ["XS", "S", "M", "L", "XL", "XXL", "Free Size"];
@@ -58,9 +61,17 @@ export default function AdminProductsPage() {
   const [isExcelUploading, setIsExcelUploading] = useState(false);
   const [showModal, setShowModal] = useState(false);
 
+  // Search & Filter States
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState("ALL");
+
   // Bulk Selection State
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  
+  // Bulk Category Assignment State
+  const [bulkTargetCategory, setBulkTargetCategory] = useState("");
+  const [isBulkAssigning, setIsBulkAssigning] = useState(false);
 
   const csvInputRef = useRef<HTMLInputElement>(null);
   const excelInputRef = useRef<HTMLInputElement>(null);
@@ -92,12 +103,15 @@ export default function AdminProductsPage() {
           ...prev,
           categorySlug: prev.categorySlug || data.categories[0].slug,
         }));
+        setBulkTargetCategory(data.categories[0].slug);
       } else {
-        setCategories([
+        const defaultCats = [
           { id: "cat-1", name: "Fashion", slug: "fashion", icon: "🛍️" },
           { id: "cat-2", name: "Gadgets", slug: "gadgets", icon: "⚡" },
           { id: "cat-3", name: "Kitchen", slug: "kitchen", icon: "🍳" },
-        ]);
+        ];
+        setCategories(defaultCats);
+        setBulkTargetCategory("fashion");
       }
     } catch {
       setCategories([
@@ -105,6 +119,7 @@ export default function AdminProductsPage() {
         { id: "cat-2", name: "Gadgets", slug: "gadgets", icon: "⚡" },
         { id: "cat-3", name: "Kitchen", slug: "kitchen", icon: "🍳" },
       ]);
+      setBulkTargetCategory("fashion");
     }
   }, []);
 
@@ -129,12 +144,25 @@ export default function AdminProductsPage() {
     void fetchProducts();
   }, [fetchCategories, fetchProducts]);
 
+  // Filtered Products based on Search & Category
+  const filteredProducts = useMemo(() => {
+    return products.filter((item) => {
+      const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase());
+      const itemCatName = item.category?.name || "General";
+      const matchesCategory = 
+        selectedCategoryFilter === "ALL" || 
+        itemCatName === selectedCategoryFilter ||
+        item.category?.slug === selectedCategoryFilter;
+      return matchesSearch && matchesCategory;
+    });
+  }, [products, searchQuery, selectedCategoryFilter]);
+
   // Bulk Selection Handlers
   const handleSelectAll = () => {
-    if (selectedIds.length === products.length) {
+    if (selectedIds.length === filteredProducts.length) {
       setSelectedIds([]);
     } else {
-      setSelectedIds(products.map((p) => p.id));
+      setSelectedIds(filteredProducts.map((p) => p.id));
     }
   };
 
@@ -144,13 +172,10 @@ export default function AdminProductsPage() {
     );
   };
 
+  // Bulk Delete Handler
   const handleBulkDelete = async () => {
     if (selectedIds.length === 0) return;
-    if (
-      !confirm(
-        `Kya aap sach me select kiye gaye ${selectedIds.length} products ko delete karna chahte hain?`
-      )
-    ) {
+    if (!confirm(`Kya aap sach me select kiye gaye ${selectedIds.length} products ko delete karna chahte hain?`)) {
       return;
     }
 
@@ -174,6 +199,36 @@ export default function AdminProductsPage() {
       alert("Network error during bulk delete");
     } finally {
       setIsBulkDeleting(false);
+    }
+  };
+
+  // Bulk Category Assign Handler
+  const handleBulkAssignCategory = async () => {
+    if (selectedIds.length === 0 || !bulkTargetCategory) return;
+
+    try {
+      setIsBulkAssigning(true);
+      const res = await fetch("/api/admin/products/bulk-assign-category", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productIds: selectedIds,
+          categorySlug: bulkTargetCategory,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        alert(data.message || "Categories updated successfully!");
+        setSelectedIds([]);
+        void fetchProducts();
+      } else {
+        alert("Failed to update categories: " + (data.error || "Unknown error"));
+      }
+    } catch {
+      alert("Network error during bulk category update");
+    } finally {
+      setIsBulkAssigning(false);
     }
   };
 
@@ -260,12 +315,11 @@ export default function AdminProductsPage() {
     }
   };
 
-  // 1. Download Sample CSV Template
+  // Download Sample CSV
   const handleDownloadSampleCsv = () => {
     const csvContent =
       "title,price,originalPrice,category,stock,badge,sizes,imageUrls,description\n" +
-      '"Slim Fit Cotton Shirt",799,1499,fashion,50,BESTSELLER,"S, M, L, XL","https://images.unsplash.com/photo-1596755094514-f87e34085b2c?w=600","100% Breathable cotton casual shirt."\n' +
-      '"Wireless Bluetooth Earbuds",1499,2999,gadgets,80,TRENDING,"","https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=600","Active noise cancellation with deep bass."\n';
+      '"Slim Fit Cotton Shirt",799,1499,fashion,50,BESTSELLER,"S, M, L, XL","https://images.unsplash.com/photo-1596755094514-f87e34085b2c?w=600","100% Breathable cotton casual shirt."\n';
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -277,7 +331,7 @@ export default function AdminProductsPage() {
     document.body.removeChild(link);
   };
 
-  // 2. Upload CSV & Bulk Insert
+  // Upload CSV
   const handleCsvFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -291,7 +345,7 @@ export default function AdminProductsPage() {
         const lines = text.split(/\r\n|\n/).filter((l) => l.trim().length > 0);
 
         if (lines.length <= 1) {
-          alert("CSV file empty hai ya sirf header hai.");
+          alert("CSV file empty hai.");
           setIsCsvUploading(false);
           return;
         }
@@ -313,12 +367,6 @@ export default function AdminProductsPage() {
           }
         }
 
-        if (parsedProducts.length === 0) {
-          alert("CSV parse karne par koi product nahi mila. Please sample CSV format check karein.");
-          setIsCsvUploading(false);
-          return;
-        }
-
         const res = await fetch("/api/admin/products/bulk", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -334,7 +382,7 @@ export default function AdminProductsPage() {
         }
       } catch (err) {
         console.error(err);
-        alert("CSV process karne mein error aaya. Format check karein.");
+        alert("CSV process karne mein error aaya.");
       } finally {
         setIsCsvUploading(false);
         if (csvInputRef.current) csvInputRef.current.value = "";
@@ -344,15 +392,10 @@ export default function AdminProductsPage() {
     reader.readAsText(file);
   };
 
-  // 3. Upload Excel (.xlsx / .xls) Multi-Sheet Bulk Insert
+  // Upload Excel
   const handleExcelFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    if (!file.name.endsWith(".xlsx") && !file.name.endsWith(".xls")) {
-      alert("Kripya ek valid Excel file (.xlsx ya .xls) upload karein!");
-      return;
-    }
 
     const formDataUpload = new FormData();
     formDataUpload.append("file", file);
@@ -366,13 +409,13 @@ export default function AdminProductsPage() {
 
       const data = await res.json();
       if (data.success) {
-        alert(data.message || "Excel products and images imported successfully!");
+        alert(data.message || "Excel products imported successfully!");
         void fetchProducts();
       } else {
         alert("Excel Import Error: " + (data.error || "Upload failed"));
       }
     } catch {
-      alert("Network error while uploading Excel file. Please try again.");
+      alert("Network error while uploading Excel file.");
     } finally {
       setIsExcelUploading(false);
       if (excelInputRef.current) excelInputRef.current.value = "";
@@ -380,7 +423,7 @@ export default function AdminProductsPage() {
   };
 
   const isFashionCategory = formData.categorySlug.toLowerCase().includes("fashion");
-  const isAllSelected = products.length > 0 && selectedIds.length === products.length;
+  const isAllSelected = filteredProducts.length > 0 && selectedIds.length === filteredProducts.length;
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto py-4">
@@ -389,64 +432,38 @@ export default function AdminProductsPage() {
         <div>
           <h1 className="text-2xl font-black text-slate-950">Product Inventory Manager</h1>
           <p className="text-xs text-slate-500 font-semibold mt-1">
-            Single form, CSV, Excel (.xlsx) bulk upload aur multi-select deletion controls
+            Search products, filter by category, manage stock &amp; bulk assign categories
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* Sample CSV Download */}
           <button
             onClick={handleDownloadSampleCsv}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer border border-slate-200"
-            title="Download CSV Format Template"
           >
             <Download className="w-3.5 h-3.5 text-slate-500" /> Sample CSV
           </button>
 
-          {/* Bulk CSV Upload */}
           <button
             onClick={() => csvInputRef.current?.click()}
             disabled={isCsvUploading || isExcelUploading}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-xs disabled:opacity-50"
           >
             {isCsvUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-            {isCsvUploading ? "Importing CSV..." : "CSV Upload"}
+            CSV Upload
           </button>
-          <input
-            ref={csvInputRef}
-            type="file"
-            accept=".csv"
-            onChange={handleCsvFileUpload}
-            className="hidden"
-          />
+          <input ref={csvInputRef} type="file" accept=".csv" onChange={handleCsvFileUpload} className="hidden" />
 
-          {/* Bulk Excel Upload (.xlsx) */}
           <button
             onClick={() => excelInputRef.current?.click()}
             disabled={isExcelUploading || isCsvUploading}
             className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-black rounded-xl transition cursor-pointer shadow-xs disabled:opacity-50"
           >
-            {isExcelUploading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Importing Excel Data...</span>
-              </>
-            ) : (
-              <>
-                <FileSpreadsheet className="w-4 h-4" />
-                <span>Bulk Upload Excel (.xlsx)</span>
-              </>
-            )}
+            {isExcelUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
+            Upload Excel (.xlsx)
           </button>
-          <input
-            ref={excelInputRef}
-            type="file"
-            accept=".xlsx, .xls"
-            onChange={handleExcelFileUpload}
-            className="hidden"
-          />
+          <input ref={excelInputRef} type="file" accept=".xlsx, .xls" onChange={handleExcelFileUpload} className="hidden" />
 
-          {/* Single Add Product */}
           <button
             onClick={() => setShowModal(true)}
             className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-xs"
@@ -456,20 +473,88 @@ export default function AdminProductsPage() {
         </div>
       </div>
 
-      {/* BULK ACTION BAR (Only visible when items are selected) */}
+      {/* SEARCH AND CATEGORY FILTER BAR */}
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col md:flex-row items-center gap-3 justify-between">
+        {/* Search Bar */}
+        <div className="relative w-full md:w-80">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search products by title..."
+            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:border-emerald-600"
+          />
+        </div>
+
+        {/* Category Filter Tabs */}
+        <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto pb-1 md:pb-0">
+          <button
+            onClick={() => setSelectedCategoryFilter("ALL")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition cursor-pointer border ${
+              selectedCategoryFilter === "ALL"
+                ? "bg-slate-900 text-white border-slate-900"
+                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
+            }`}
+          >
+            All Products ({products.length})
+          </button>
+          {categories.map((cat) => {
+            const count = products.filter((p) => p.category?.name === cat.name || p.category?.slug === cat.slug).length;
+            return (
+              <button
+                key={cat.id}
+                onClick={() => setSelectedCategoryFilter(cat.name)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition cursor-pointer border ${
+                  selectedCategoryFilter === cat.name
+                    ? "bg-slate-900 text-white border-slate-900"
+                    : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
+                }`}
+              >
+                {cat.icon || "📁"} {cat.name} ({count})
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* BULK ACTION BAR */}
       {selectedIds.length > 0 && (
-        <div className="bg-rose-50 border border-rose-200 p-4 rounded-2xl flex items-center justify-between shadow-xs animate-in fade-in duration-200">
-          <div className="flex items-center gap-2 text-xs font-black text-rose-950">
-            <span className="w-6 h-6 rounded-full bg-rose-600 text-white flex items-center justify-center text-[11px]">
+        <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-2 text-xs font-black text-emerald-950">
+            <span className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[11px]">
               {selectedIds.length}
             </span>
-            <span>products selected for action</span>
+            <span>products selected</span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-xl border border-emerald-200">
+              <FolderInput className="w-4 h-4 text-emerald-600" />
+              <select
+                value={bulkTargetCategory}
+                onChange={(e) => setBulkTargetCategory(e.target.value)}
+                className="bg-transparent text-xs font-bold text-slate-900 outline-none cursor-pointer"
+              >
+                {categories.map((c) => (
+                  <option key={c.id} value={c.slug}>
+                    Move to: {c.icon ? `${c.icon} ` : ""} {c.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={handleBulkAssignCategory}
+                disabled={isBulkAssigning}
+                className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black rounded-lg transition cursor-pointer disabled:opacity-50"
+              >
+                {isBulkAssigning ? "Moving..." : "Apply Category"}
+              </button>
+            </div>
+
             <button
               onClick={() => setSelectedIds([])}
-              className="px-3.5 py-1.5 bg-white border border-rose-200 hover:bg-rose-100 text-rose-800 text-xs font-bold rounded-xl transition cursor-pointer"
+              className="px-3.5 py-1.5 bg-white border border-emerald-200 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl transition cursor-pointer"
             >
               Deselect All
             </button>
@@ -478,12 +563,8 @@ export default function AdminProductsPage() {
               disabled={isBulkDeleting}
               className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl transition shadow-xs cursor-pointer disabled:opacity-50"
             >
-              {isBulkDeleting ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Trash2 className="w-3.5 h-3.5" />
-              )}
-              {isBulkDeleting ? "Deleting Products..." : `Delete Selected (${selectedIds.length})`}
+              {isBulkDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+              {isBulkDeleting ? "Deleting..." : `Delete Selected (${selectedIds.length})`}
             </button>
           </div>
         </div>
@@ -577,7 +658,6 @@ export default function AdminProductsPage() {
               </select>
             </div>
 
-            {/* Fashion Sizes Selector */}
             {isFashionCategory && (
               <div className="sm:col-span-2 bg-blue-50/60 p-4 rounded-2xl border border-blue-100 space-y-2">
                 <label className="text-xs font-black text-blue-900 uppercase tracking-wider block">
@@ -606,11 +686,10 @@ export default function AdminProductsPage() {
               </div>
             )}
 
-            {/* Multiple Photo Link Inputs */}
             <div className="sm:col-span-2 space-y-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-black text-slate-900 flex items-center gap-1.5 uppercase tracking-wider">
-                  <ImageIcon className="w-4 h-4 text-blue-600" /> Photo URLs (Paste Image Web Links)
+                  <ImageIcon className="w-4 h-4 text-blue-600" /> Photo URLs
                 </label>
                 {imageUrls.length < 5 && (
                   <button
@@ -631,14 +710,10 @@ export default function AdminProductsPage() {
                   <input
                     required={index === 0}
                     type="url"
-                    placeholder={
-                      index === 0
-                        ? "https://example.com/product-main.jpg"
-                        : "https://example.com/gallery-2.jpg"
-                    }
+                    placeholder="https://example.com/product.jpg"
                     value={url}
                     onChange={(e) => handleImageUrlChange(index, e.target.value)}
-                    className="flex-1 p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:border-blue-600 outline-none"
+                    className="flex-1 p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:border-blue-600 outline-none"
                   />
                   {imageUrls.length > 1 && (
                     <button
@@ -659,10 +734,10 @@ export default function AdminProductsPage() {
               </label>
               <textarea
                 rows={2}
-                placeholder="Product specifications, bullet points, fabric..."
+                placeholder="Product specifications..."
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                className="w-full p-3 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:border-blue-600 outline-none"
+                className="w-full p-3 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:border-blue-600 outline-none"
               />
             </div>
 
@@ -693,23 +768,21 @@ export default function AdminProductsPage() {
             <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
             <span className="text-xs font-bold">Products load ho rahe hain...</span>
           </div>
-        ) : products.length === 0 ? (
+        ) : filteredProducts.length === 0 ? (
           <div className="py-16 text-center text-slate-500 space-y-2">
             <AlertCircle className="w-8 h-8 text-slate-300 mx-auto" />
-            <p className="text-xs font-black text-slate-900">Abhi koi products nahi hain.</p>
-            <p className="text-xs text-slate-500 font-medium">Bulk Excel / CSV upload ya upar button se product add karein.</p>
+            <p className="text-xs font-black text-slate-900">Koi products nahi mile.</p>
+            <p className="text-xs text-slate-500 font-medium">Search query ya category filter change karke dekhein.</p>
           </div>
         ) : (
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-black uppercase tracking-wider">
               <tr>
-                {/* SELECT ALL CHECKBOX */}
                 <th className="p-4 w-12 text-center">
                   <button
                     type="button"
                     onClick={handleSelectAll}
                     className="text-slate-400 hover:text-slate-800 transition cursor-pointer"
-                    title={isAllSelected ? "Deselect All" : "Select All"}
                   >
                     {isAllSelected ? (
                       <CheckSquare className="w-4 h-4 text-emerald-600" />
@@ -730,7 +803,7 @@ export default function AdminProductsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-bold text-slate-900">
-              {products.map((item) => {
+              {filteredProducts.map((item) => {
                 const isSelected = selectedIds.includes(item.id);
                 return (
                   <tr
@@ -739,7 +812,6 @@ export default function AdminProductsPage() {
                       isSelected ? "bg-emerald-50/50" : "hover:bg-slate-50/60"
                     }`}
                   >
-                    {/* ROW CHECKBOX */}
                     <td className="p-4 text-center">
                       <button
                         type="button"
@@ -766,7 +838,7 @@ export default function AdminProductsPage() {
                       <div>
                         <span className="font-black text-slate-950 block text-sm">{item.title}</span>
                         <span className="text-[10px] text-slate-400 font-normal">
-                          {item.images?.length || 1} photo(s) • /{item.slug}
+                          {item.images?.length || 1} photo(s) • Stock: {item.stock ?? 'N/A'}
                         </span>
                       </div>
                     </td>

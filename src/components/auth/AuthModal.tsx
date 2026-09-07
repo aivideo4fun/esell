@@ -14,7 +14,7 @@ export default function AuthModal({
 }) {
   const [step, setStep] = useState<"INPUT" | "OTP">("INPUT");
   const [identifier, setIdentifier] = useState("");
-  const [name, setName] = useState("");
+const [paymentMode, setPaymentMode] = useState<"ONLINE" | "COD">("ONLINE");
   const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");

@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { MapPin, Navigation, ChevronDown, X, Loader2, Check } from "lucide-react";
 
 export default function DeliveryLocationBadge() {
-  const [pincode, setPincode] = useState("341512");
+  const [pincode, setPincode] = useState("");
   const [city, setCity] = useState("Locating...");
   const [isOpen, setIsOpen] = useState(false);
   const [inputPin, setInputPin] = useState("");
