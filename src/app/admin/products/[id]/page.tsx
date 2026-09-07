@@ -41,19 +41,19 @@ export default async function ProductDetailPage({
 
   try {
     if (cleanParam) {
-      product = await prisma.product.findFirst({
+      product = (await prisma.product.findFirst({
         where: {
           OR: [{ slug: cleanParam }, { id: cleanParam }],
         },
         include: { images: true, category: true },
-      }) as unknown as DbProduct | null;
+      })) as unknown as DbProduct | null;
     }
 
     if (!product) {
-      product = await prisma.product.findFirst({
+      product = (await prisma.product.findFirst({
         orderBy: { createdAt: "desc" },
         include: { images: true, category: true },
-      }) as unknown as DbProduct | null;
+      })) as unknown as DbProduct | null;
     }
   } catch (err) {
     console.error("DB Fetch Error:", err);
