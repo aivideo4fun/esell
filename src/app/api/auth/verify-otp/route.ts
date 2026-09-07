@@ -15,19 +15,29 @@ export async function POST(req: Request) {
       );
     }
 
-    // Firebase Phone Auth ke baad backend user session upsert/sync karein
     let user = null;
     if (target.includes("@")) {
       user = await prisma.user.upsert({
         where: { email: target },
         update: {},
-        create: { email: target, name: name || "Customer" },
+        create: { 
+          email: target, 
+          name: name || "Customer",
+          phone: null 
+        },
       });
     } else {
+      // Generate a unique fallback email to satisfy Prisma's required email schema field if any
+      const fallbackEmail = `user_${target}@catchbuddy.local`;
+
       user = await prisma.user.upsert({
         where: { phone: target },
         update: {},
-        create: { phone: target, name: name || "Customer" },
+        create: { 
+          phone: target, 
+          email: fallbackEmail, 
+          name: name || "Customer" 
+        },
       });
     }
 
