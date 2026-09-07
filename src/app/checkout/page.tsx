@@ -1,411 +1,582 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
-import Image from "next/image";
 import { useState, useEffect } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
-  ShoppingBag,
-  ShieldCheck,
-  Truck,
-  CreditCard,
-  User,
-  ArrowRight,
-  Loader2,
-  CheckCircle2,
-  Lock,
   MapPin,
-  Phone,
-  Mail,
+  ShieldCheck,
+  ArrowLeft,
+  Lock,
+  Smartphone,
+  CheckCircle2,
+  RefreshCw,
+  CreditCard,
+  Banknote,
 } from "lucide-react";
+import Header from "@/components/Header";
+import { auth } from "@/lib/firebase"; // Aapke firebase export file ka path (jaise '@/lib/firebase' ya jahan bhi app setup hai)
+import { RecaptchaVerifier, signInWithPhoneNumber, ConfirmationResult } from "firebase/auth";
 
-interface CartItem {
-  productId: string;
-  slug: string;
-  title: string;
-  price: number;
-  originalPrice: number;
-  image: string;
-  quantity: number;
-  selectedSize?: string | null;
-  selectedColor?: string | null;
+interface SavedAddress {
+  id: string;
+  fullName: string;
+  phone: string;
+  address: string;
+  city: string;
+  pincode: string;
 }
 
 export default function CheckoutPage() {
   const router = useRouter();
-
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [cart, setCart] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
-  const [successMsg, setSuccessMsg] = useState("");
 
-  // Customer Details Form State
-  const [fullName, setFullName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
-  const [street, setStreet] = useState("");
-  const [city, setCity] = useState("Jaipur");
-  const [state, setState] = useState("Rajasthan");
-  const [pincode, setPincode] = useState("302020");
-  const [paymentMethod, setPaymentMethod] = useState<"PREPAID" | "COD">("PREPAID");
+  // Address Form State
+  const [formData, setFormData] = useState({
+    fullName: "",
+    phone: "",
+    address: "",
+    city: "",
+    pincode: "",
+  });
 
-  const [currentUser, setCurrentUser] = useState<{ id?: string; name?: string; phone?: string; email?: string } | null>(null);
+  const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
+  const [paymentMode, setPaymentMode] = useState<"PREPAID" | "COD">("PREPAID");
+
+  // Firebase COD OTP States
+  const [showCodModal, setShowCodModal] = useState(false);
+  const [codOtp, setCodOtp] = useState("");
+  const [isVerifyingCod, setIsVerifyingCod] = useState(false);
+  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
 
   useEffect(() => {
-    // 1. Check Authentication on Load
-    try {
-      const stored = localStorage.getItem("cb_user") || localStorage.getItem("cb_customer");
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed && (parsed.id || parsed.userId)) {
-          setCurrentUser(parsed);
-          if (parsed.name) setFullName(parsed.name);
-          if (parsed.phone) setPhone(parsed.phone);
-          if (parsed.email) setEmail(parsed.email);
-        }
-      }
-    } catch {
-      setCurrentUser(null);
-    }
-
-    // 2. Load Cart Items
-    try {
-      const savedCart = localStorage.getItem("cb_cart");
-      if (savedCart) {
-        const parsed = JSON.parse(savedCart);
-        if (Array.isArray(parsed)) {
-          setCartItems(parsed);
-        }
-      }
-    } catch {
-      setCartItems([]);
-    }
-  }, []);
-
-  const totalAmount = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
-
-  const handlePlaceOrder = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMsg("");
-    setSuccessMsg("");
-
-    if (cartItems.length === 0) {
-      setErrorMsg("Your cart is empty.");
-      return;
-    }
-
-    // Check if user is logged in before sending request
-    const storedUser = localStorage.getItem("cb_user") || localStorage.getItem("cb_customer");
-    let activeUserId = "";
-    if (storedUser) {
-      try {
-        const parsedUser = JSON.parse(storedUser);
-        activeUserId = parsedUser.id || parsedUser.userId || "";
-      } catch {}
-    }
-
-    if (!activeUserId) {
-      alert("Unauthorized! Please login to your account to place an order.");
+    // 1. Authentication Check
+    const userSession = localStorage.getItem("cb_user") || localStorage.getItem("user");
+    if (!userSession) {
       router.push("/login?redirect=/checkout");
       return;
     }
 
-    const cleanPhone = phone.replace(/\D/g, "").slice(-10);
-    if (!fullName.trim() || cleanPhone.length !== 10 || !street.trim() || !pincode.trim()) {
-      setErrorMsg("Please fill out all required shipping details correctly (10-digit mobile number required).");
+    try {
+      const userData = JSON.parse(userSession);
+      if (userData?.name) {
+        setFormData((prev) => ({
+          ...prev,
+          fullName: userData.name,
+          phone: userData.phone || userData.identifier || "",
+        }));
+      }
+    } catch {
+      // ignore
+    }
+
+    // 2. Load Saved Addresses from localStorage & past orders
+    try {
+      const loadedAddrs: SavedAddress[] = [];
+      const localAddrs = localStorage.getItem("cb_saved_addresses");
+      if (localAddrs) {
+        loadedAddrs.push(...JSON.parse(localAddrs));
+      }
+
+      const pastOrders = localStorage.getItem("cb_orders");
+      if (pastOrders) {
+        const orders = JSON.parse(pastOrders);
+        orders.forEach((ord: any, idx: number) => {
+          if (ord.shippingAddress) {
+            loadedAddrs.push({
+              id: `past-${idx}`,
+              ...ord.shippingAddress,
+            });
+          }
+        });
+      }
+
+      const uniqueAddrs = Array.from(new Set(loadedAddrs.map((a) => a.pincode))).map(
+        (pin) => loadedAddrs.find((a) => a.pincode === pin)!
+      );
+
+      setSavedAddresses(uniqueAddrs);
+    } catch {
+      setSavedAddresses([]);
+    }
+
+    // 3. Load Cart
+    try {
+      const saved = localStorage.getItem("cb_cart");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setCart(parsed);
+        } else {
+          router.push("/cart");
+        }
+      } else {
+        router.push("/cart");
+      }
+    } catch {
+      router.push("/cart");
+    }
+  }, [router]);
+
+  const handleSelectSavedAddress = (addr: SavedAddress) => {
+    setFormData({
+      fullName: addr.fullName,
+      phone: addr.phone,
+      address: addr.address,
+      city: addr.city,
+      pincode: addr.pincode,
+    });
+  };
+
+  // Calculations
+  const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const shipping = subtotal > 0 ? 60 : 0;
+
+  const appliedCouponStr = typeof window !== "undefined" ? localStorage.getItem("cb_applied_coupon") : null;
+  let discountAmount = 0;
+  let couponName = "";
+
+  if (appliedCouponStr) {
+    try {
+      const cData = JSON.parse(appliedCouponStr);
+      couponName = cData.code;
+      const val = Number(cData.value || 0);
+      if (cData.type === "FLAT") {
+        discountAmount = Math.min(subtotal, val);
+      } else if (cData.type === "PERCENT") {
+        discountAmount = Math.round((subtotal * val) / 100);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  const totalPayable = Math.max(0, subtotal + shipping - discountAmount);
+
+  // Initialize Firebase Recaptcha and send OTP via Firebase Console
+  const setupRecaptchaAndSendOtp = async () => {
+    if (!auth) {
+      alert("Firebase Auth is not initialized.");
       return;
     }
 
-    setLoading(true);
+    let phoneNum = formData.phone.trim();
+    if (!phoneNum.startsWith("+")) {
+      phoneNum = "+91" + phoneNum; // Assuming Indian numbers (+91)
+    }
 
     try {
-      const res = await fetch("/api/orders", {
+      setIsVerifyingCod(true);
+
+      // Setup invisible recaptcha verifier
+      if (!(window as any).recaptchaVerifier) {
+        (window as any).recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha-container", {
+          size: "invisible",
+          callback: () => {
+            // reCAPTCHA solved
+          },
+        });
+      }
+
+      const appVerifier = (window as any).recaptchaVerifier;
+      const confirmation = await signInWithPhoneNumber(auth, phoneNum, appVerifier);
+      
+      setConfirmationResult(confirmation);
+      setShowCodModal(true);
+      setIsVerifyingCod(false);
+    } catch (err: any) {
+      console.error("Firebase OTP Error:", err);
+      alert("Failed to send OTP via Firebase: " + (err.message || "Unknown error"));
+      setIsVerifyingCod(false);
+    }
+  };
+
+  const handlePlaceOrderClick = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.fullName || !formData.phone || !formData.address || !formData.pincode || !formData.city) {
+      alert("Kripya saare delivery address fields bharein!");
+      return;
+    }
+
+    try {
+      const newAddr: SavedAddress = {
+        id: Date.now().toString(),
+        ...formData,
+      };
+      const existing = JSON.parse(localStorage.getItem("cb_saved_addresses") || "[]");
+      localStorage.setItem("cb_saved_addresses", JSON.stringify([newAddr, ...existing]));
+    } catch {
+      // ignore
+    }
+
+    if (paymentMode === "COD") {
+      // Trigger Firebase Phone Auth OTP
+      void setupRecaptchaAndSendOtp();
+    } else {
+      executeRazorpayPayment();
+    }
+  };
+
+  const executeRazorpayPayment = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/orders/create-razorpay", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId: activeUserId,
-          items: cartItems,
-          customerDetails: {
-            fullName: fullName.trim(),
-            phone: cleanPhone,
-            email: email.trim() || `${cleanPhone}@catchbuddy.in`,
-            street: street.trim(),
-            city: city.trim(),
-            state: state.trim(),
-            pincode: pincode.trim(),
-          },
-          paymentMethod: paymentMethod,
-          totalAmount: totalAmount,
+          amount: totalPayable,
+          items: cart,
+          shippingAddress: formData,
+          discount: discountAmount,
+          couponCode: couponName,
         }),
       });
+      const orderData = await res.json();
 
-      const data = await res.json();
-
-      if (res.status === 401 || !data.success) {
-        alert(data.error || "Unauthorized! Please login to your account to place an order.");
-        router.push("/login?redirect=/checkout");
-        return;
+      if (!orderData.success) {
+        throw new Error(orderData.error || "Failed to initialize payment gateway");
       }
 
-      if (data.success) {
-        localStorage.removeItem("cb_cart");
-        window.dispatchEvent(new Event("storage"));
-        setSuccessMsg("Order placed successfully! Redirecting...");
-        setTimeout(() => {
-          router.push(`/order-success?orderId=${data.orderNumber || data.orderId}`);
-        }, 1500);
-      }
-    } catch {
-      setErrorMsg("Network error while placing order.");
+      const options = {
+        key: orderData.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_live_123456789",
+        amount: orderData.amount,
+        currency: "INR",
+        name: "CatchBuddy",
+        description: "Secure Online Order Payment",
+        order_id: orderData.razorpayOrderId,
+        handler: async function (response: any) {
+          const verifyRes = await fetch("/api/orders/verify-razorpay", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              items: cart,
+              shippingAddress: formData,
+              totalAmount: totalPayable,
+              discount: discountAmount,
+              couponCode: couponName,
+            }),
+          });
+          const verifyData = await verifyRes.json();
+          if (verifyData.success) {
+            localStorage.removeItem("cb_cart");
+            localStorage.removeItem("cb_applied_coupon");
+            window.dispatchEvent(new Event("storage"));
+            router.push(`/order-success?orderId=${verifyData.orderId}`);
+          } else {
+            alert("Payment verification failed.");
+          }
+        },
+        prefill: {
+          name: formData.fullName,
+          contact: formData.phone,
+        },
+        theme: {
+          color: "#16a34a",
+        },
+      };
+
+      const rzp = new (window as any).Razorpay(options);
+      rzp.open();
+    } catch (err: any) {
+      alert(err.message || "Payment gateway error");
     } finally {
       setLoading(false);
     }
   };
 
+  // Verify Firebase OTP Code entered by user
+  const handleVerifyFirebaseOtpAndPlaceOrder = async () => {
+    if (!codOtp || codOtp.length < 6 || !confirmationResult) {
+      alert("Kripya valid 6-digit Firebase verification code daalein!");
+      return;
+    }
+
+    setIsVerifyingCod(true);
+    try {
+      // Confirm OTP with Firebase
+      await confirmationResult.confirm(codOtp);
+
+      // If Firebase OTP confirmation succeeds, place COD Order in Database
+      const res = await fetch("/api/orders/place", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: cart,
+          shippingAddress: formData,
+          paymentMethod: "COD",
+          totalAmount: totalPayable,
+          discount: discountAmount,
+          couponCode: couponName,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        localStorage.removeItem("cb_cart");
+        localStorage.removeItem("cb_applied_coupon");
+        window.dispatchEvent(new Event("storage"));
+        router.push(`/order-success?orderId=${data.orderId}`);
+      } else {
+        alert("Order error: " + (data.error || "Unknown"));
+      }
+    } catch (err: any) {
+      console.error("OTP Verification Error:", err);
+      alert("Invalid verification code. Please try again.");
+    } finally {
+      setIsVerifyingCod(false);
+      setShowCodModal(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-[#F8FAFC] pb-20 text-slate-900 font-sans">
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-white border-b border-slate-200 px-4 sm:px-8 py-3 shadow-xs">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2.5 group">
-            <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center p-1">
-              <Image src="/logo.png" alt="CatchBuddy" width={36} height={36} className="w-full h-full object-contain" priority />
-            </div>
-            <span className="text-xl font-black tracking-tight text-slate-950">
-              Catch<span className="text-emerald-600">Buddy</span> Checkout
-            </span>
-          </Link>
-          <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
-            <ShieldCheck className="w-4 h-4" /> 100% Secure Checkout
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-slate-50 pb-28 text-slate-900 font-sans">
+      <Header />
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-8 mt-6">
-        {errorMsg && (
-          <div className="mb-4 p-4 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-2xl">
-            {errorMsg}
-          </div>
-        )}
+      <script src="https://checkout.razorpay.com/v1/checkout.js" async />
 
-        {successMsg && (
-          <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold rounded-2xl flex items-center gap-2">
-            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-            {successMsg}
-          </div>
-        )}
+      {/* Invisible Recaptcha Container required by Firebase Phone Auth */}
+      <div id="recaptcha-container"></div>
 
-        {cartItems.length === 0 ? (
-          <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center space-y-4 max-w-lg mx-auto mt-10 shadow-sm">
-            <ShoppingBag className="w-12 h-12 text-slate-300 mx-auto" />
-            <h2 className="text-lg font-black text-slate-900">Your cart is empty</h2>
-            <p className="text-xs text-slate-500 font-medium">Add some items to your cart before proceeding to checkout.</p>
-            <Link
-              href="/shop"
-              className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-xl text-xs font-black transition hover:bg-emerald-700"
-            >
-              Start Shopping <ArrowRight className="w-4 h-4" />
-            </Link>
-          </div>
-        ) : (
-          <form onSubmit={handlePlaceOrder} className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            {/* Left Column: Shipping & Payment */}
-            <div className="lg:col-span-7 space-y-6">
-              {/* Shipping Details Box */}
-              <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 space-y-4 shadow-sm">
-                <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-                  <MapPin className="w-5 h-5 text-emerald-600" />
-                  <h2 className="text-base font-black text-slate-900">Shipping Address & Details</h2>
-                </div>
-
-                <div className="space-y-3.5 text-xs">
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Full Name</label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        required
-                        value={fullName}
-                        onChange={(e) => setFullName(e.target.value)}
-                        placeholder="Enter full name"
-                        className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold focus:outline-emerald-600"
-                      />
-                      <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="font-bold text-slate-700 block mb-1">Mobile Number (Verified)</label>
-                      <div className="relative">
-                        <input
-                          type="tel"
-                          required
-                          maxLength={10}
-                          value={phone}
-                          onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
-                          placeholder="10-digit mobile"
-                          className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold focus:outline-emerald-600"
-                        />
-                        <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="font-bold text-slate-700 block mb-1">Email Address</label>
-                      <div className="relative">
-                        <input
-                          type="email"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          placeholder="email@example.com"
-                          className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold focus:outline-emerald-600"
-                        />
-                        <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Street Address / House No.</label>
-                    <input
-                      type="text"
-                      required
-                      value={street}
-                      onChange={(e) => setStreet(e.target.value)}
-                      placeholder="House/Flat no., Street name, Landmark"
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold focus:outline-emerald-600"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2">
-                    <div>
-                      <label className="font-bold text-slate-700 block mb-1">City</label>
-                      <input
-                        type="text"
-                        required
-                        value={city}
-                        onChange={(e) => setCity(e.target.value)}
-                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold focus:outline-emerald-600"
-                      />
-                    </div>
-                    <div>
-                      <label className="font-bold text-slate-700 block mb-1">State</label>
-                      <input
-                        type="text"
-                        required
-                        value={state}
-                        onChange={(e) => setState(e.target.value)}
-                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold focus:outline-emerald-600"
-                      />
-                    </div>
-                    <div>
-                      <label className="font-bold text-slate-700 block mb-1">Pincode</label>
-                      <input
-                        type="text"
-                        required
-                        maxLength={6}
-                        value={pincode}
-                        onChange={(e) => setPincode(e.target.value.replace(/\D/g, ""))}
-                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold focus:outline-emerald-600"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Payment Method Box */}
-              <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 space-y-4 shadow-sm">
-                <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-                  <CreditCard className="w-5 h-5 text-emerald-600" />
-                  <h2 className="text-base font-black text-slate-900">Payment Method</h2>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 text-xs font-bold">
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod("PREPAID")}
-                    className={`p-4 rounded-2xl border text-left transition flex flex-col gap-1 cursor-pointer ${
-                      paymentMethod === "PREPAID"
-                        ? "border-emerald-600 bg-emerald-50/50 text-emerald-950"
-                        : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span>Online / Prepaid</span>
-                      <span className="px-2 py-0.5 bg-emerald-600 text-white text-[9px] rounded-md font-black">SAVE 5%</span>
-                    </div>
-                    <span className="text-[11px] font-medium text-slate-500">UPI, Card, NetBanking</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod("COD")}
-                    className={`p-4 rounded-2xl border text-left transition flex flex-col gap-1 cursor-pointer ${
-                      paymentMethod === "COD"
-                        ? "border-emerald-600 bg-emerald-50/50 text-emerald-950"
-                        : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300"
-                    }`}
-                  >
-                    <span>Cash on Delivery</span>
-                    <span className="text-[11px] font-medium text-slate-500">Pay when order arrives</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Right Column: Order Summary */}
-            <div className="lg:col-span-5 space-y-6">
-              <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 space-y-4 shadow-sm sticky top-20">
-                <h2 className="text-base font-black text-slate-900 pb-3 border-b border-slate-100">Order Summary</h2>
-
-                <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
-                  {cartItems.map((item, idx) => (
-                    <div key={idx} className="flex items-center gap-3 text-xs">
-                      <div className="w-12 h-12 bg-slate-100 rounded-xl overflow-hidden shrink-0 border border-slate-200">
-                        <img src={item.image} alt={item.title} className="w-full h-full object-cover" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-bold text-slate-900 line-clamp-1">{item.title}</h4>
-                        <p className="text-slate-500 text-[11px]">Qty: {item.quantity}</p>
-                      </div>
-                      <div className="font-black text-slate-950">₹{item.price * item.quantity}</div>
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 mt-6">
+        <form onSubmit={handlePlaceOrderClick} className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-7 space-y-6">
+            {savedAddresses.length > 0 && (
+              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-2xs space-y-3">
+                <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                  <MapPin className="w-4 h-4 text-emerald-600" /> Select Saved Address
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {savedAddresses.map((addr) => (
+                    <div
+                      key={addr.id}
+                      onClick={() => handleSelectSavedAddress(addr)}
+                      className="p-3.5 rounded-2xl border-2 border-slate-200 hover:border-emerald-600 bg-slate-50/50 cursor-pointer transition space-y-1"
+                    >
+                      <p className="text-xs font-black text-slate-950">{addr.fullName}</p>
+                      <p className="text-[11px] text-slate-600 line-clamp-1">{addr.address}, {addr.city} - {addr.pincode}</p>
+                      <p className="text-[10px] font-bold text-emerald-700">Phone: {addr.phone}</p>
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
 
-                <div className="pt-3 border-t border-slate-100 space-y-2 text-xs font-bold text-slate-600">
-                  <div className="flex justify-between">
-                    <span>Subtotal</span>
-                    <span className="text-slate-950 font-mono">₹{totalAmount}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Shipping</span>
-                    <span className="text-emerald-600">FREE</span>
-                  </div>
-                  <div className="flex justify-between text-sm font-black text-slate-950 pt-2 border-t border-slate-100">
-                    <span>Total Amount</span>
-                    <span className="font-mono text-emerald-700">₹{totalAmount}</span>
-                  </div>
+            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-2xs space-y-4">
+              <h3 className="text-sm font-black text-slate-950 flex items-center gap-2 border-b border-slate-100 pb-3">
+                <MapPin className="w-4 h-4 text-emerald-600" /> Enter Delivery Address
+              </h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Full Name *</label>
+                  <input
+                    required
+                    type="text"
+                    placeholder="e.g. Ramesh Kumar"
+                    value={formData.fullName}
+                    onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-600"
+                  />
                 </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Mobile Number (10 digits) *</label>
+                  <input
+                    required
+                    type="tel"
+                    maxLength={10}
+                    placeholder="9876543210"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-600"
+                  />
+                </div>
+              </div>
 
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-black transition shadow-sm flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
-                  <span>Place Order Now (₹{totalAmount})</span>
-                </button>
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">House No, Building, Street / Colony *</label>
+                <input
+                  required
+                  type="text"
+                  placeholder="Street name, landmark..."
+                  value={formData.address}
+                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-600"
+                />
+              </div>
 
-                <div className="flex items-center justify-center gap-2 text-[11px] font-bold text-slate-400 pt-2">
-                  <Truck className="w-4 h-4 text-emerald-600" />
-                  <span>Fast Delivery Pan India • Easy Returns</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">City / District *</label>
+                  <input
+                    required
+                    type="text"
+                    placeholder="e.g. Udaipur"
+                    value={formData.city}
+                    onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-600"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Pincode *</label>
+                  <input
+                    required
+                    type="text"
+                    maxLength={6}
+                    placeholder="e.g. 313001"
+                    value={formData.pincode}
+                    onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-600"
+                  />
                 </div>
               </div>
             </div>
-          </form>
-        )}
+
+            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-2xs space-y-4">
+              <h3 className="text-sm font-black text-slate-950 border-b border-slate-100 pb-3">
+                Choose Payment Method
+              </h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div
+                  onClick={() => setPaymentMode("PREPAID")}
+                  className={`p-4 rounded-2xl border-2 transition cursor-pointer flex items-center justify-between ${
+                    paymentMode === "PREPAID"
+                      ? "border-emerald-600 bg-emerald-50/50"
+                      : "border-slate-200 bg-white"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <CreditCard className="w-5 h-5 text-emerald-600" />
+                    <div>
+                      <p className="text-xs font-black text-slate-950">Prepaid Online (Razorpay)</p>
+                      <p className="text-[10px] text-slate-500">UPI, Cards, NetBanking</p>
+                    </div>
+                  </div>
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${paymentMode === "PREPAID" ? "border-emerald-600 bg-emerald-600" : "border-slate-300"}`}>
+                    {paymentMode === "PREPAID" && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => setPaymentMode("COD")}
+                  className={`p-4 rounded-2xl border-2 transition cursor-pointer flex items-center justify-between ${
+                    paymentMode === "COD"
+                      ? "border-emerald-600 bg-emerald-50/50"
+                      : "border-slate-200 bg-white"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Banknote className="w-5 h-5 text-amber-600" />
+                    <div>
+                      <p className="text-xs font-black text-slate-950">Cash on Delivery</p>
+                      <p className="text-[10px] text-slate-500">Requires Firebase Console OTP</p>
+                    </div>
+                  </div>
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${paymentMode === "COD" ? "border-emerald-600 bg-emerald-600" : "border-slate-300"}`}>
+                    {paymentMode === "COD" && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="lg:col-span-5 space-y-4">
+            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-2xs space-y-4">
+              <h3 className="text-sm font-black text-slate-950 border-b border-slate-100 pb-3">
+                Order Items Summary ({cart.length})
+              </h3>
+
+              <div className="max-h-60 overflow-y-auto space-y-3 pr-1">
+                {cart.map((item, idx) => (
+                  <div key={idx} className="flex items-center gap-3 text-xs">
+                    <img src={item.image} alt="" className="w-12 h-12 rounded-xl object-cover border border-slate-100 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-slate-900 truncate">{item.title}</p>
+                      <p className="text-[10px] text-slate-500">Qty: {item.quantity}</p>
+                    </div>
+                    <span className="font-black text-slate-950">₹{item.price * item.quantity}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-2 text-xs font-bold text-slate-600 pt-3 border-t border-slate-100">
+                <div className="flex justify-between">
+                  <span>Subtotal</span>
+                  <span>₹{subtotal}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Shipping</span>
+                  <span className="text-emerald-700">₹{shipping}</span>
+                </div>
+                {discountAmount > 0 && (
+                  <div className="flex justify-between text-emerald-700">
+                    <span>Discount ({couponName})</span>
+                    <span>-₹{discountAmount}</span>
+                  </div>
+                )}
+                <div className="pt-3 border-t border-slate-100 flex justify-between text-base font-black text-slate-950">
+                  <span>Total Payable</span>
+                  <span className="text-emerald-700">₹{totalPayable}</span>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading || isVerifyingCod}
+                className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-2xl transition shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {loading || isVerifyingCod ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                {paymentMode === "PREPAID" ? `Pay Online via Razorpay ₹${totalPayable}` : "Verify via Firebase OTP & Place Order"}
+              </button>
+            </div>
+          </div>
+        </form>
       </main>
+
+      {/* Firebase OTP Modal */}
+      {showCodModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white w-full max-w-sm rounded-3xl p-6 space-y-4 shadow-2xl relative text-center">
+            <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto border border-emerald-200">
+              <Smartphone className="w-6 h-6" />
+            </div>
+            <h3 className="text-lg font-black text-slate-950">Firebase Phone Verification</h3>
+            <p className="text-xs text-slate-500">
+              Enter the OTP sent by Google Firebase Console to <b>{formData.phone}</b>.
+            </p>
+
+            <input
+              type="text"
+              maxLength={6}
+              placeholder="• • • • • •"
+              value={codOtp}
+              onChange={(e) => setCodOtp(e.target.value)}
+              className="w-full text-center tracking-[10px] text-lg font-black p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-emerald-600"
+            />
+
+            <button
+              type="button"
+              onClick={handleVerifyFirebaseOtpAndPlaceOrder}
+              disabled={isVerifyingCod}
+              className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl transition cursor-pointer flex items-center justify-center gap-2"
+            >
+              {isVerifyingCod ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+              Confirm OTP &amp; Place Order
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCodModal(false)}
+              className="text-xs text-slate-400 hover:text-slate-700 font-bold"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

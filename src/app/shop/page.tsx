@@ -11,10 +11,12 @@ import {
   Loader2, 
   Sparkles,
   Check,
-  ArrowRight
+  ArrowRight,
+  Plus,
+  Minus
 } from "lucide-react";
-import { useCart } from "@/hooks/useCart";
 import { useWishlist } from "@/hooks/useWishlist";
+import Header from "@/components/Header";
 
 interface ProductImage {
   url: string;
@@ -57,12 +59,46 @@ function ShopContent() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("ALL");
-  const [addedId, setAddedId] = useState<string | null>(null);
+  
+  // Cart items mapping: productId -> quantity
+  const [cartQuantities, setCartQuantities] = useState<Record<string, number>>({});
 
-  const cart = useCart();
   const { wishlist, toggleWishlist } = useWishlist();
 
-  // Sync selected category from URL search params
+  // Load cart quantities from localStorage
+  useEffect(() => {
+    const updateCartMap = () => {
+      try {
+        const saved = localStorage.getItem("cb_cart");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            const map: Record<string, number> = {};
+            parsed.forEach((item: any) => {
+              const pid = item.productId || item.id;
+              if (pid) {
+                map[pid] = item.quantity || 1;
+              }
+            });
+            setCartQuantities(map);
+          }
+        } else {
+          setCartQuantities({});
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    updateCartMap();
+    window.addEventListener("storage", updateCartMap);
+    const interval = setInterval(updateCartMap, 400);
+    return () => {
+      window.removeEventListener("storage", updateCartMap);
+      clearInterval(interval);
+    };
+  }, []);
+
   useEffect(() => {
     if (catSlugParam) {
       setSelectedCategory(catSlugParam);
@@ -76,13 +112,13 @@ function ShopContent() {
       try {
         setLoading(true);
         const [prodRes, catRes, bannerRes] = await Promise.all([
-          fetch("/api/products", { cache: "no-store" }),
+          fetch("/api/admin/products", { cache: "no-store" }),
           fetch("/api/admin/categories", { cache: "no-store" }),
           fetch("/api/admin/banners", { cache: "no-store" }),
         ]);
 
         const prodData = await prodRes.json();
-        if (prodData.success && prodData.products) {
+        if (prodData.success && Array.isArray(prodData.products)) {
           setProducts(prodData.products);
         } else if (Array.isArray(prodData)) {
           setProducts(prodData);
@@ -118,20 +154,47 @@ function ShopContent() {
     return matchesCategory && matchesSearch;
   });
 
-  const handleAddToCart = (product: Product, e: React.MouseEvent) => {
+  // Handle adding or incrementing quantity in cart
+  const handleUpdateCartQty = (product: Product, delta: number, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if ((product.stock ?? 1) <= 0) return;
 
-    cart.addItem({
-      id: product.id,
-      title: product.title,
-      price: product.price,
-      image: product.images?.[0]?.url || "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=500&q=80",
-      quantity: 1,
-    });
-    setAddedId(product.id);
-    setTimeout(() => setAddedId(null), 1500);
+    try {
+      const existing = localStorage.getItem("cb_cart");
+      let cart = existing ? JSON.parse(existing) : [];
+      if (!Array.isArray(cart)) cart = [];
+
+      const index = cart.findIndex((i: any) => (i.productId === product.id || i.id === product.id));
+
+      if (index > -1) {
+        cart[index].quantity += delta;
+        if (cart[index].quantity <= 0) {
+          cart.splice(index, 1);
+        }
+      } else if (delta > 0) {
+        cart.push({
+          productId: product.id,
+          slug: product.slug || product.id,
+          title: product.title,
+          price: product.price,
+          originalPrice: product.originalPrice || product.price * 1.3,
+          image: product.images?.[0]?.url || "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=500&q=80",
+          quantity: 1,
+        });
+      }
+
+      localStorage.setItem("cb_cart", JSON.stringify(cart));
+      window.dispatchEvent(new Event("storage"));
+
+      // Refresh local quantities map
+      const newMap: Record<string, number> = {};
+      cart.forEach((item: any) => {
+        newMap[item.productId || item.id] = item.quantity;
+      });
+      setCartQuantities(newMap);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const handleWishlistToggle = (product: Product, e: React.MouseEvent) => {
@@ -148,10 +211,12 @@ function ShopContent() {
   const activeShopBanner = banners[0];
 
   return (
-    <div className="min-h-screen bg-slate-50 py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto space-y-6">
-        
-        {/* Header */}
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-24">
+      {/* Reusable Header */}
+      <Header />
+
+      <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8 space-y-6">
+        {/* Title & Search */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-black text-slate-900 flex items-center gap-2">
@@ -162,7 +227,6 @@ function ShopContent() {
             </p>
           </div>
 
-          {/* Search bar */}
           <div className="relative w-full sm:w-72">
             <input
               type="text"
@@ -245,9 +309,6 @@ function ShopContent() {
           <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center space-y-3 shadow-xs">
             <ShoppingBag className="w-12 h-12 text-slate-300 mx-auto" />
             <p className="text-base font-black text-slate-800">No Products Found</p>
-            <p className="text-xs text-slate-500 max-w-sm mx-auto">
-              No products matching your selected category or query.
-            </p>
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
@@ -257,6 +318,7 @@ function ShopContent() {
                 "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=500&q=80";
               const isWishlisted = wishlist.some((w) => w.id === product.id);
               const isOutOfStock = (product.stock ?? 1) <= 0;
+              const qty = cartQuantities[product.id] || 0;
               const productUrl = `/product/${product.slug || product.id}`;
 
               return (
@@ -283,7 +345,6 @@ function ShopContent() {
                     <button
                       onClick={(e) => handleWishlistToggle(product, e)}
                       className="absolute top-2.5 right-2.5 p-2 bg-white/90 backdrop-blur-xs rounded-full border border-slate-100 shadow-2xs hover:bg-white text-slate-700 hover:text-red-500 transition cursor-pointer"
-                      title="Add to Wishlist"
                     >
                       <Heart className={`w-4 h-4 ${isWishlisted ? "fill-red-500 text-red-500" : ""}`} />
                     </button>
@@ -307,29 +368,38 @@ function ShopContent() {
                         )}
                       </div>
 
-                      <button
-                        onClick={(e) => handleAddToCart(product, e)}
-                        disabled={isOutOfStock}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
-                          isOutOfStock
-                            ? "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
-                            : addedId === product.id
-                            ? "bg-emerald-600 text-white cursor-pointer"
-                            : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 cursor-pointer"
-                        }`}
-                      >
-                        {isOutOfStock ? (
-                          "Sold Out"
-                        ) : addedId === product.id ? (
-                          <>
-                            <Check className="w-3.5 h-3.5" /> Added
-                          </>
-                        ) : (
-                          <>
-                            <ShoppingBag className="w-3.5 h-3.5" /> Add
-                          </>
-                        )}
-                      </button>
+                      {/* Quantity Controller / Add Button */}
+                      {isOutOfStock ? (
+                        <span className="px-3 py-1.5 bg-slate-100 text-slate-400 text-[10px] font-bold rounded-xl">
+                          Sold Out
+                        </span>
+                      ) : qty > 0 ? (
+                        <div
+                          onClick={(e) => e.preventDefault()}
+                          className="flex items-center bg-emerald-600 text-white rounded-xl overflow-hidden shadow-xs"
+                        >
+                          <button
+                            onClick={(e) => handleUpdateCartQty(product, -1, e)}
+                            className="p-1.5 hover:bg-emerald-700 transition"
+                          >
+                            <Minus className="w-3.5 h-3.5" />
+                          </button>
+                          <span className="w-6 text-center text-xs font-black">{qty}</span>
+                          <button
+                            onClick={(e) => handleUpdateCartQty(product, 1, e)}
+                            className="p-1.5 hover:bg-emerald-700 transition"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={(e) => handleUpdateCartQty(product, 1, e)}
+                          className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-black transition flex items-center gap-1 border border-emerald-200 cursor-pointer"
+                        >
+                          <ShoppingBag className="w-3.5 h-3.5" /> Add
+                        </button>
+                      )}
                     </div>
                   </div>
                 </Link>
@@ -337,7 +407,6 @@ function ShopContent() {
             })}
           </div>
         )}
-
       </div>
     </div>
   );

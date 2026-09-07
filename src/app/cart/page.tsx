@@ -15,6 +15,7 @@ import {
   ArrowLeft,
   Loader2,
 } from "lucide-react";
+import Header from "@/components/Header";
 
 interface CartItem {
   productId: string;
@@ -32,7 +33,9 @@ export default function CartPage() {
   const router = useRouter();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [couponCode, setCouponCode] = useState("");
-  const [discountPercent, setDiscountPercent] = useState(0);
+  const [discountValue, setDiscountValue] = useState(0);
+  const [discountType, setDiscountType] = useState<"PERCENT" | "FLAT" | "SHIPPING">("PERCENT");
+  const [appliedCouponName, setAppliedCouponName] = useState("");
   const [couponApplied, setCouponApplied] = useState(false);
   const [couponMsg, setCouponMsg] = useState("");
   const [validatingCoupon, setValidatingCoupon] = useState(false);
@@ -43,6 +46,17 @@ export default function CartPage() {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) setCart(parsed);
+      }
+
+      // Restore applied coupon if already in session
+      const savedCoupon = localStorage.getItem("cb_applied_coupon");
+      if (savedCoupon) {
+        const cData = JSON.parse(savedCoupon);
+        setCouponCode(cData.code || "");
+        setDiscountValue(Number(cData.value || 0));
+        setDiscountType(cData.type || "PERCENT");
+        setAppliedCouponName(cData.code || "");
+        setCouponApplied(true);
       }
     } catch (e) {
       console.error("Failed to load cart", e);
@@ -69,7 +83,7 @@ export default function CartPage() {
     window.dispatchEvent(new Event("storage"));
   };
 
-  // Validate coupon against Admin Database API
+  // Real Database Coupon Validation with robust property matching & saving to localStorage
   const applyCoupon = async () => {
     if (!couponCode.trim()) return;
 
@@ -77,38 +91,77 @@ export default function CartPage() {
     setCouponMsg("");
 
     try {
-      const res = await fetch(`/api/admin/coupons/verify?code=${encodeURIComponent(couponCode.trim())}`);
+      const res = await fetch("/api/admin/coupons", { cache: "no-store" });
       const data = await res.json();
 
-      if (data.success && data.coupon) {
-        const discountVal = data.coupon.discount || data.coupon.percentage || 10;
-        setDiscountPercent(discountVal);
-        setCouponApplied(true);
-        setCouponMsg(`🎉 Coupon '${data.coupon.code || couponCode.toUpperCase()}' applied! ${discountVal}% OFF`);
-      } else {
-        // Fallback check: try fetching all public coupons if verify endpoint differs
-        const allRes = await fetch("/api/admin/coupons");
-        const allData = await allRes.json();
+      let matchedCoupon = null;
+      if (data.success && Array.isArray(data.coupons)) {
+        matchedCoupon = data.coupons.find(
+          (c: any) => c.code?.trim().toUpperCase() === couponCode.trim().toUpperCase()
+        );
+      }
+
+      if (matchedCoupon) {
+        const codeUpper = matchedCoupon.code.toUpperCase();
         
-        let found = null;
-        if (allData.success && Array.isArray(allData.coupons)) {
-          found = allData.coupons.find(
-            (c: any) => c.code?.toUpperCase() === couponCode.trim().toUpperCase()
-          );
+        // Extract exact numeric value from admin coupon
+        const rawVal = 
+          matchedCoupon.discount ?? 
+          matchedCoupon.value ?? 
+          matchedCoupon.percentage ?? 
+          matchedCoupon.amount ?? 
+          matchedCoupon.discountValue ?? 
+          matchedCoupon.rate ?? 
+          0;
+
+        const val = Number(rawVal);
+        
+        const typeStr = String(
+          matchedCoupon.type ?? 
+          matchedCoupon.discountType ?? 
+          (matchedCoupon.isFlat ? "FLAT" : "PERCENT")
+        ).toUpperCase();
+
+        const isExplicitShipping = typeStr.includes("SHIP") || codeUpper === "FREESHIP" || (codeUpper === "FREE" && val === 0);
+        const isFlat = typeStr.includes("FLAT") || typeStr.includes("FIXED") || matchedCoupon.isFlat === true;
+
+        let finalType: "PERCENT" | "FLAT" | "SHIPPING" = "PERCENT";
+        let finalVal = val;
+
+        if (isExplicitShipping) {
+          finalType = "SHIPPING";
+          finalVal = 0;
+          setCouponMsg(`🎉 Coupon '${codeUpper}' applied successfully! (Free Delivery)`);
+        } else if (isFlat) {
+          finalType = "FLAT";
+          finalVal = val > 0 ? val : 50;
+          setCouponMsg(`🎉 Coupon '${codeUpper}' applied successfully! (₹${finalVal} OFF)`);
+        } else {
+          finalType = "PERCENT";
+          finalVal = val > 0 ? val : 10;
+          setCouponMsg(`🎉 Coupon '${codeUpper}' applied successfully! (${finalVal}% OFF)`);
         }
 
-        if (found) {
-          const discountVal = found.discount || found.percentage || 10;
-          setDiscountPercent(discountVal);
-          setCouponApplied(true);
-          setCouponMsg(`🎉 Coupon applied successfully! (${discountVal}% OFF)`);
-        } else {
-          setCouponMsg("❌ Invalid or expired coupon code.");
-          setCouponApplied(false);
-          setDiscountPercent(0);
-        }
+        setDiscountValue(finalVal);
+        setDiscountType(finalType);
+        setAppliedCouponName(codeUpper);
+        setCouponApplied(true);
+
+        // SAVE COUPON TO LOCALSTORAGE SO CHECKOUT CAN ACCESS IT
+        localStorage.setItem("cb_applied_coupon", JSON.stringify({
+          code: codeUpper,
+          type: finalType,
+          value: finalVal
+        }));
+
+      } else {
+        setCouponMsg("❌ Invalid or expired coupon code.");
+        setCouponApplied(false);
+        setDiscountValue(0);
+        localStorage.removeItem("cb_applied_coupon");
       }
-    } catch {
+    } catch (err) {
+      console.error(err);
       setCouponMsg("❌ Error verifying coupon. Please try again.");
     } finally {
       setValidatingCoupon(false);
@@ -117,11 +170,21 @@ export default function CartPage() {
 
   // Calculations
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const shipping = subtotal > 0 ? 60 : 0;
-  const discountAmount = couponApplied ? Math.round((subtotal * discountPercent) / 100) : 0;
+  
+  const isFreeShipping = couponApplied && discountType === "SHIPPING";
+  const shipping = (subtotal > 0 && !isFreeShipping) ? 60 : 0;
+  
+  let discountAmount = 0;
+  if (couponApplied) {
+    if (discountType === "FLAT") {
+      discountAmount = Math.min(subtotal, discountValue);
+    } else if (discountType === "PERCENT") {
+      discountAmount = Math.round((subtotal * discountValue) / 100);
+    }
+  }
+
   const totalPayable = Math.max(0, subtotal + shipping - discountAmount);
 
-  // Proceed to Checkout with Authentication Guard
   const handleProceedToCheckout = () => {
     if (cart.length === 0) return;
 
@@ -136,43 +199,30 @@ export default function CartPage() {
 
   if (cart.length === 0) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 text-center space-y-4">
-        <div className="w-20 h-20 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto border border-emerald-200">
-          <ShoppingBag className="w-10 h-10" />
+      <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
+        <Header />
+        <div className="flex flex-col items-center justify-center py-28 p-4 text-center space-y-4">
+          <div className="w-20 h-20 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto border border-emerald-200">
+            <ShoppingBag className="w-10 h-10" />
+          </div>
+          <h2 className="text-xl font-black text-slate-900">Your Cart is Empty</h2>
+          <p className="text-xs text-slate-500 max-w-xs">
+            Explore our trending viral products and add items to your cart.
+          </p>
+          <Link
+            href="/shop"
+            className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl transition shadow-sm"
+          >
+            Start Shopping
+          </Link>
         </div>
-        <h2 className="text-xl font-black text-slate-900">Your Cart is Empty</h2>
-        <p className="text-xs text-slate-500 max-w-xs">
-          Explore our trending viral products and add items to your cart.
-        </p>
-        <Link
-          href="/shop"
-          className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl transition shadow-sm"
-        >
-          Start Shopping
-        </Link>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-slate-50 pb-28 text-slate-900 font-sans">
-      {/* Header */}
-      <header className="sticky top-0 z-40 bg-white border-b border-slate-200 px-4 sm:px-8 py-3.5">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <Link
-            href="/shop"
-            className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-700 inline-flex items-center gap-1.5 text-xs font-bold"
-          >
-            <ArrowLeft className="w-4 h-4" /> Continue Shopping
-          </Link>
-          <span className="text-sm font-black text-slate-950">
-            Catch<span className="text-emerald-600">Buddy</span> Cart
-          </span>
-          <div className="flex items-center gap-1 text-emerald-700 text-xs font-bold bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-            <ShieldCheck className="w-3.5 h-3.5" /> 100% Secure
-          </div>
-        </div>
-      </header>
+      <Header />
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 mt-6 space-y-6">
         <h1 className="text-xl font-black text-slate-950">Shopping Cart ({cart.length} items)</h1>
@@ -287,9 +337,9 @@ export default function CartPage() {
                     {shipping === 0 ? "FREE" : `₹${shipping}`}
                   </span>
                 </div>
-                {couponApplied && (
+                {couponApplied && discountType !== "SHIPPING" && discountAmount > 0 && (
                   <div className="flex justify-between text-emerald-700">
-                    <span>Discount ({discountPercent}%)</span>
+                    <span>Discount ({appliedCouponName})</span>
                     <span className="font-mono">-₹{discountAmount}</span>
                   </div>
                 )}
