@@ -5,72 +5,67 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
-    const { identifier, phone, email, otp, name } = await req.json();
+    const { identifier, phone, email, name } = await req.json();
     const target = (identifier || phone || email || "").trim();
-    const cleanOtp = (otp || "").trim();
 
-    if (!target || !cleanOtp) {
+    if (!target || target.length < 5) {
       return NextResponse.json(
-        { success: false, error: "Mobile/Email aur 6-digit OTP dono zaroori hain" },
+        { success: false, error: "Valid mobile number or email required" },
         { status: 400 }
       );
     }
 
-    // Database se OTP record find karein
-    const record = await prisma.verificationOtp.findFirst({
-      where: { identifier: target },
+    // 6-digit random OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiry
+
+    // Purane OTP delete karke naya save karein
+    await prisma.verificationOtp.deleteMany({ where: { identifier: target } });
+    await prisma.verificationOtp.create({
+      data: {
+        identifier: target,
+        otp,
+        expiresAt,
+      },
     });
 
-    if (!record) {
-      return NextResponse.json(
-        { success: false, error: "OTP expired ya invalid hai. Dobara bhejein." },
-        { status: 400 }
-      );
-    }
-
-    // Check expiry
-    if (new Date() > new Date(record.expiresAt)) {
-      await prisma.verificationOtp.deleteMany({ where: { identifier: target } });
-      return NextResponse.json(
-        { success: false, error: "OTP ki validity samapt ho chuki hai." },
-        { status: 400 }
-      );
-    }
-
-    // Match OTP
-    if (record.otp !== cleanOtp) {
-      return NextResponse.json(
-        { success: false, error: "Galat OTP enter kiya gaya hai." },
-        { status: 400 }
-      );
-    }
-
-    // Verification successful -> Delete used OTP
-    await prisma.verificationOtp.deleteMany({ where: { identifier: target } });
-
-    // Handle User creation or login session retrieval if name is provided
-    let user = null;
+    // Also ensure user profile exists or upsert safely with fallback email for phones
     if (target.includes("@")) {
-      user = await prisma.user.upsert({
+      await prisma.user.upsert({
         where: { email: target },
         update: {},
-        create: { email: target, name: name || "Customer" },
+        create: { email: target, name: name || "Customer", phone: null },
       });
     } else {
-      user = await prisma.user.upsert({
+      const fallbackEmail = `user_${target}@catchbuddy.local`;
+      await prisma.user.upsert({
         where: { phone: target },
         update: {},
-        create: { phone: target, name: name || "Customer" },
+        create: { phone: target, email: fallbackEmail, name: name || "Customer" },
       });
+    }
+
+    // Fast2SMS integration check (SMS delivery)
+    const fast2smsKey = process.env.FAST2SMS_API_KEY;
+    const cleanPhone = target.replace("+91", "").trim();
+    const isMobile = /^[0-9]{10}$/.test(cleanPhone);
+
+    if (fast2smsKey && isMobile) {
+      try {
+        await fetch(
+          `https://www.fast2sms.com/dev/bulkV2?authorization=${fast2smsKey}&variables_values=${otp}&route=otp&numbers=${cleanPhone}`
+        );
+      } catch (smsErr) {
+        console.error("SMS Gateway Error:", smsErr);
+      }
     }
 
     return NextResponse.json({
       success: true,
-      message: "OTP verified successfully",
-      user,
+      message: "OTP sent successfully to your mobile/email",
     });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Verification failed";
+    const msg = error instanceof Error ? error.message : "Failed to send OTP";
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }
