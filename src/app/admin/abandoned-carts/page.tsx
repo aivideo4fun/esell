@@ -128,8 +128,8 @@ export default function AbandonedCartsPage() {
               {carts.map((c) => (
                 <tr key={c.id} className="hover:bg-slate-50/60 transition">
                   <td className="p-4">
-                    <span className="font-black text-slate-950 block">{c.customerName}</span>
-                    <span className="text-[10px] text-slate-400 font-normal block">{c.customerEmail}</span>
+                    <span className="font-black text-slate-950 block">{c.customerName || "Guest User"}</span>
+                    <span className="text-[10px] text-slate-400 font-normal block">{c.customerEmail || "No email"}</span>
                     {c.customerPhone && (
                       <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1 mt-0.5">
                         <MessageCircle className="w-2.5 h-2.5" /> {c.customerPhone}
@@ -137,13 +137,13 @@ export default function AbandonedCartsPage() {
                     )}
                   </td>
                   <td className="p-4 text-slate-700 max-w-xs truncate">
-                    {c.productsSummary}
+                    {c.productsSummary || "No items summary"}
                   </td>
                   <td className="p-4 font-black text-slate-950">
-                    ₹{c.cartValue.toLocaleString("en-IN")}
+                    ₹{(c.cartValue ?? 0).toLocaleString("en-IN")}
                   </td>
                   <td className="p-4 text-slate-500 font-medium">
-                    {c.timeAgo}
+                    {c.timeAgo || "Recently"}
                   </td>
                   <td className="p-4 text-right">
                     {c.isReminded ? (
@@ -152,7 +152,7 @@ export default function AbandonedCartsPage() {
                       </span>
                     ) : (
                       <button
-                        onClick={() => handleSendOffer(cartHelper(c))}
+                        onClick={() => handleSendOffer(c)}
                         disabled={sendingId === c.id}
                         className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition cursor-pointer shadow-xs disabled:opacity-50"
                       >
@@ -173,8 +173,4 @@ export default function AbandonedCartsPage() {
       </div>
     </div>
   );
-}
-
-function cartHelper(c: AbandonedCart) {
-  return c;
 }
