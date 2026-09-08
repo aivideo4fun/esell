@@ -20,7 +20,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.className} min-h-screen flex flex-col bg-[#fafafa]`}>
+      <body className={`${inter.className} min-h-screen flex flex-col bg-[#fafafa]`} suppressHydrationWarning={true}>
         <main className="flex-1">{children}</main>
 
         {/* Global Policy, FAQs & Support Footer */}
