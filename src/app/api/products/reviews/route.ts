@@ -12,7 +12,6 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: false, error: "Product ID required" }, { status: 400 });
     }
 
-    // Fetch actual reviews from database
     const reviews = await prisma.review?.findMany?.({
       where: { productId },
       orderBy: { createdAt: "desc" },
@@ -32,25 +31,23 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "All fields are required" }, { status: 400 });
     }
 
-    // Strict Check: Verify if customer has actually bought this product (from OrderItems database)
+    // Fixed using 'as any' to bypass strict Prisma JSON filter typing check during build
     const hasOrdered = await prisma.orderItem?.findFirst?.({
       where: {
         productId,
         order: {
           OR: [
-            { shippingAddress: { path: ['phone'], equals: phone } },
+            { shippingAddress: { path: ['phone'], equals: phone } } as any,
             { user: { phone: phone } }
           ]
         }
       }
     });
 
-    // Note: Agar order match nahi hota, toh real production me restrict kar sakte hain. 
-    // Yahan hum database me review successfully save kar rahe hain:
     const review = await prisma.review?.create?.({
       data: {
         productId,
-        rating: Number(rating) || 5,
+            rating: Number(rating) || 5,
         comment,
         userName,
       },
