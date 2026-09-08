@@ -60,12 +60,10 @@ function ShopContent() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("ALL");
   
-  // Cart items mapping: productId -> quantity
   const [cartQuantities, setCartQuantities] = useState<Record<string, number>>({});
 
   const { wishlist, toggleWishlist } = useWishlist();
 
-  // Load cart quantities from localStorage
   useEffect(() => {
     const updateCartMap = () => {
       try {
@@ -154,7 +152,7 @@ function ShopContent() {
     return matchesCategory && matchesSearch;
   });
 
-  // Handle adding or incrementing quantity in cart
+  // Strict Max 9 Limit & Inventory Validation Handler
   const handleUpdateCartQty = (product: Product, delta: number, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -165,9 +163,25 @@ function ShopContent() {
       if (!Array.isArray(cart)) cart = [];
 
       const index = cart.findIndex((i: any) => (i.productId === product.id || i.id === product.id));
+      const currentQty = index > -1 ? (cart[index].quantity || 1) : 0;
+      const newQty = currentQty + delta;
+
+      if (newQty > 0) {
+        const stockAvailable = typeof product.stock === "number" ? product.stock : 10;
+        const maxAllowedLimit = Math.min(9, stockAvailable); // Strict max 9 rule
+
+        if (newQty > maxAllowedLimit) {
+          if (stockAvailable < 9) {
+            alert(`Maaf kijiye, inventory mein sirf ${stockAvailable} items available hain.`);
+          } else {
+            alert("Aap maximum 9 quantity hi add kar sakte hain.");
+          }
+          return;
+        }
+      }
 
       if (index > -1) {
-        cart[index].quantity += delta;
+        cart[index].quantity = newQty;
         if (cart[index].quantity <= 0) {
           cart.splice(index, 1);
         }
@@ -180,13 +194,13 @@ function ShopContent() {
           originalPrice: product.originalPrice || product.price * 1.3,
           image: product.images?.[0]?.url || "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=500&q=80",
           quantity: 1,
+          stock: product.stock,
         });
       }
 
       localStorage.setItem("cb_cart", JSON.stringify(cart));
       window.dispatchEvent(new Event("storage"));
 
-      // Refresh local quantities map
       const newMap: Record<string, number> = {};
       cart.forEach((item: any) => {
         newMap[item.productId || item.id] = item.quantity;
@@ -212,11 +226,9 @@ function ShopContent() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-24">
-      {/* Reusable Header */}
       <Header />
 
       <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8 space-y-6">
-        {/* Title & Search */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-black text-slate-900 flex items-center gap-2">
@@ -239,7 +251,6 @@ function ShopContent() {
           </div>
         </div>
 
-        {/* PROMOTIONAL BANNER */}
         {activeShopBanner && (
           <Link
             href={activeShopBanner.linkUrl || "/shop"}
@@ -269,7 +280,6 @@ function ShopContent() {
           </Link>
         )}
 
-        {/* Categories Bar */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
           <Link
             href="/shop"
@@ -299,7 +309,6 @@ function ShopContent() {
           })}
         </div>
 
-        {/* Product Grid */}
         {loading ? (
           <div className="min-h-[50vh] flex flex-col items-center justify-center gap-2">
             <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
@@ -368,7 +377,6 @@ function ShopContent() {
                         )}
                       </div>
 
-                      {/* Quantity Controller / Add Button */}
                       {isOutOfStock ? (
                         <span className="px-3 py-1.5 bg-slate-100 text-slate-400 text-[10px] font-bold rounded-xl">
                           Sold Out
@@ -380,14 +388,15 @@ function ShopContent() {
                         >
                           <button
                             onClick={(e) => handleUpdateCartQty(product, -1, e)}
-                            className="p-1.5 hover:bg-emerald-700 transition"
+                            className="p-1.5 hover:bg-emerald-700 transition cursor-pointer"
                           >
                             <Minus className="w-3.5 h-3.5" />
                           </button>
                           <span className="w-6 text-center text-xs font-black">{qty}</span>
                           <button
                             onClick={(e) => handleUpdateCartQty(product, 1, e)}
-                            className="p-1.5 hover:bg-emerald-700 transition"
+                            disabled={qty >= 9}
+                            className="p-1.5 hover:bg-emerald-700 disabled:opacity-40 transition cursor-pointer"
                           >
                             <Plus className="w-3.5 h-3.5" />
                           </button>

@@ -1,172 +1,202 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Star, ShoppingBag, Zap, Ban } from "lucide-react";
-import { useCart } from "@/hooks/useCart";
-import { useRouter } from "next/navigation";
+import { Plus, Minus, ShoppingBag, Heart } from "lucide-react";
 
-export interface CardProduct {
-  id: string;
-  title: string;
-  price: number;
-  originalPrice?: number;
-  mrp?: number;
-  stock?: number;
-  category?: string | { name?: string };
-  image?: string;
-  images?: Array<{ url: string } | string>;
-  slug?: string;
+interface ProductCardProps {
+  product: {
+    id: string;
+    title: string;
+    slug: string;
+    price: number;
+    originalPrice?: number;
+    images?: any[];
+    image?: string;
+    stock?: number;
+    badge?: string;
+  };
 }
 
-export default function ProductCard({ product }: { product: CardProduct }) {
-  const cart = useCart();
-  const router = useRouter();
+export default function ProductCard({ product }: ProductCardProps) {
+  const [qty, setQty] = useState(0);
+  const [isWishlisted, setIsWishlisted] = useState(false);
 
-  const isOutOfStock = (product.stock ?? 1) <= 0;
-  const mrpVal = Number(product.originalPrice || product.mrp || 0);
-  const priceVal = Number(product.price || 0);
-  const discount = mrpVal > priceVal ? Math.round(((mrpVal - priceVal) / mrpVal) * 100) : 0;
+  // Absolute max limit is strictly 9 per order rule
+  const rawStock = Number(product.stock);
+  const stockAvailable = !isNaN(rawStock) && rawStock >= 0 ? rawStock : 10;
+  
+  // STRICT: Never exceed 9, regardless of stock size
+  const maxAllowedLimit = Math.min(9, stockAvailable);
 
-  const mainImage =
-    typeof product.images?.[0] === "string"
-      ? product.images[0]
-      : (product.images?.[0] as { url: string })?.url || product.image || "/placeholder.png";
+  const imgUrl =
+    product.images?.[0]?.url ||
+    product.images?.[0] ||
+    product.image ||
+    "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=500&q=80";
 
-  const categoryName =
-    typeof product.category === "string"
-      ? product.category
-      : product.category?.name || "GADGETS";
+  useEffect(() => {
+    try {
+      const savedCart = JSON.parse(localStorage.getItem("cb_cart") || "[]");
+      const item = savedCart.find((i: any) => i.productId === product.id || i.id === product.id);
+      if (item) {
+        // Enforce max 9 on load if cart had more
+        const currentStoredQty = item.quantity || 0;
+        const clamped = currentStoredQty > 9 ? 9 : currentStoredQty;
+        setQty(clamped);
+      }
 
-  const handleAddToCart = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (isOutOfStock) return;
+      const savedWishlist = JSON.parse(localStorage.getItem("cb_wishlist") || "[]");
+      if (savedWishlist.some((i: any) => i.id === product.id || i.slug === product.slug)) {
+        setIsWishlisted(true);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, [product.id, product.slug]);
 
-    cart.addItem({
-      id: product.id,
-      title: product.title,
-      price: priceVal,
-      image: mainImage,
-      quantity: 1,
-    });
-    if (cart.openCart) cart.openCart();
+  const updateCardCart = (newQty: number) => {
+    if (newQty < 0) newQty = 0;
+
+    // STRICT CHECK: Absolute upper bound is 9
+    if (newQty > 9) {
+      alert("Aap ek order mein maximum 9 quantity hi add kar sakte hain.");
+      return;
+    }
+
+    if (newQty > stockAvailable) {
+      alert(`Maaf kijiye, inventory mein sirf ${stockAvailable} items available hain.`);
+      return;
+    }
+
+    try {
+      const existing = localStorage.getItem("cb_cart");
+      let cart = existing ? JSON.parse(existing) : [];
+      if (!Array.isArray(cart)) cart = [];
+
+      const index = cart.findIndex((i: any) => i.productId === product.id || i.id === product.id);
+
+      if (newQty === 0) {
+        if (index > -1) cart.splice(index, 1);
+      } else {
+        const cartItem = {
+          id: product.id,
+          productId: product.id,
+          slug: product.slug,
+          title: product.title,
+          price: product.price,
+          originalPrice: product.originalPrice || product.price * 1.5,
+          image: imgUrl,
+          quantity: newQty,
+          stock: product.stock,
+        };
+
+        if (index > -1) {
+          cart[index].quantity = newQty;
+        } else {
+          cart.push(cartItem);
+        }
+      }
+
+      localStorage.setItem("cb_cart", JSON.stringify(cart));
+      window.dispatchEvent(new Event("storage"));
+      setQty(newQty);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
-  const handleBuyNow = (e: React.MouseEvent) => {
+  const toggleWishlist = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (isOutOfStock) return;
-
-    cart.addItem({
-      id: product.id,
-      title: product.title,
-      price: priceVal,
-      image: mainImage,
-      quantity: 1,
-    });
-    router.push("/checkout");
+    try {
+      const savedWishlist = JSON.parse(localStorage.getItem("cb_wishlist") || "[]");
+      let updated = [];
+      if (isWishlisted) {
+        updated = savedWishlist.filter((i: any) => i.id !== product.id && i.slug !== product.slug);
+        setIsWishlisted(false);
+      } else {
+        updated = [...savedWishlist, { id: product.id, slug: product.slug, title: product.title, price: product.price, image: imgUrl }];
+        setIsWishlisted(true);
+      }
+      localStorage.setItem("cb_wishlist", JSON.stringify(updated));
+      window.dispatchEvent(new Event("storage"));
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   return (
-    <div
-      className={`group bg-white rounded-3xl border p-4 transition-all duration-300 shadow-xs flex flex-col justify-between ${
-        isOutOfStock
-          ? "border-red-200 opacity-80"
-          : "border-gray-200 hover:border-[#16a34a] hover:shadow-xl"
-      }`}
-    >
-      <div>
-        {/* Image Container with Badges */}
-        <Link href={`/product/${product.slug || product.id}`}>
-          <div className="relative aspect-square w-full rounded-2xl bg-[#f8fafc] overflow-hidden flex items-center justify-center p-3 mb-4">
-            <img
-              src={mainImage}
-              alt={product.title}
-              className={`object-contain w-full h-full transition duration-500 ${
-                isOutOfStock ? "grayscale opacity-60" : "group-hover:scale-105"
-              }`}
-            />
+    <div className="bg-white rounded-3xl border border-slate-200 p-4 relative flex flex-col justify-between shadow-2xs group">
+      {/* Wishlist Button on Top-Right Corner */}
+      <button
+        type="button"
+        onClick={toggleWishlist}
+        className={`absolute top-3 right-3 p-2.5 rounded-full border shadow-xs transition cursor-pointer z-10 ${
+          isWishlisted ? "bg-rose-50 border-rose-200 text-rose-600" : "bg-white border-slate-200 text-slate-600 hover:text-rose-600"
+        }`}
+        title="Wishlist"
+      >
+        <Heart className={`w-4 h-4 ${isWishlisted ? "fill-rose-600" : ""}`} />
+      </button>
 
-            {/* Out of Stock vs Bestseller Badge */}
-            {isOutOfStock ? (
-              <span className="absolute top-2.5 left-2.5 bg-red-600 text-white text-[10px] font-black px-2.5 py-0.5 rounded-md uppercase tracking-wider shadow-sm">
-                OUT OF STOCK
-              </span>
-            ) : (
-              <span className="absolute top-2.5 left-2.5 bg-black text-white text-[10px] font-black px-2.5 py-0.5 rounded-md uppercase tracking-wider">
-                BESTSELLER
-              </span>
-            )}
-
-            {/* Discount Badge */}
-            {!isOutOfStock && discount > 0 && (
-              <span className="absolute top-2.5 right-2.5 bg-red-50 text-red-600 border border-red-200 text-[10px] font-black px-2 py-0.5 rounded-md">
-                {discount}% OFF
-              </span>
-            )}
-          </div>
-        </Link>
-
-        {/* Category & Rating */}
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-[11px] font-black uppercase tracking-wider text-[#16a34a]">
-            {categoryName}
-          </span>
-          <div className="flex items-center gap-1 text-[11px] font-black text-amber-500 bg-amber-50 px-2 py-0.5 rounded-md">
-            <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-            <span>4.8</span>
-          </div>
-        </div>
-
-        {/* Product Title */}
-        <Link href={`/product/${product.slug || product.id}`}>
-          <h3 className="text-sm font-black text-[#0f172a] hover:text-[#16a34a] transition line-clamp-1 mb-2 capitalize">
-            {product.title}
-          </h3>
-        </Link>
-
-        {/* Pricing */}
-        <div className="flex items-baseline gap-2 mb-4">
-          <span className="text-lg font-black text-[#065f46]">
-            ₹{priceVal}
-          </span>
-          {mrpVal > priceVal && (
-            <span className="text-xs font-bold text-[#64748b] line-through">
-              ₹{mrpVal}
+      <Link href={`/product/${product.slug || product.id}`} className="space-y-3 block">
+        <div className="aspect-square bg-slate-50 rounded-2xl overflow-hidden border border-slate-100 flex items-center justify-center relative">
+          <img
+            src={imgUrl}
+            alt={product.title}
+            className="w-full h-full object-contain p-2 group-hover:scale-105 transition duration-300"
+          />
+          {product.badge && (
+            <span className="absolute top-2 left-2 bg-emerald-600 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-md">
+              {product.badge}
             </span>
           )}
         </div>
-      </div>
 
-      {/* Quick Action Buttons */}
-      <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
-        {isOutOfStock ? (
+        <div>
+          <h3 className="text-xs font-black text-slate-950 line-clamp-2 leading-snug">
+            {product.title}
+          </h3>
+          <div className="flex items-center gap-2 mt-1.5">
+            <span className="text-sm font-black text-slate-950">₹{product.price}</span>
+            {product.originalPrice && product.originalPrice > product.price && (
+              <span className="text-xs text-slate-400 line-through font-bold">₹{product.originalPrice}</span>
+            )}
+          </div>
+        </div>
+      </Link>
+
+      {/* Dynamic Add / Counter strictly bounded to max 9 */}
+      <div className="pt-3 mt-2 border-t border-slate-100">
+        {qty === 0 ? (
           <button
-            disabled
             type="button"
-            className="w-full inline-flex items-center justify-center gap-1.5 bg-gray-100 border border-gray-200 text-gray-400 text-xs font-black py-2.5 px-3 rounded-xl cursor-not-allowed uppercase tracking-wider"
+            onClick={() => updateCardCart(1)}
+            className="w-full py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer"
           >
-            <Ban className="w-3.5 h-3.5 text-gray-400" /> Out of Stock
+            <ShoppingBag className="w-3.5 h-3.5" /> Add
           </button>
         ) : (
-          <>
+          <div className="w-full flex items-center justify-between bg-emerald-600 rounded-xl p-1 text-white shadow-xs">
             <button
               type="button"
-              onClick={handleAddToCart}
-              className="flex-1 inline-flex items-center justify-center gap-1.5 bg-[#f0fdf4] border border-[#bbf7d0] hover:bg-[#dcfce7] text-[#065f46] text-xs font-black py-2.5 px-3 rounded-xl transition cursor-pointer"
+              onClick={() => updateCardCart(qty - 1)}
+              className="w-8 h-8 bg-emerald-700 hover:bg-emerald-800 rounded-lg flex items-center justify-center text-white cursor-pointer font-black transition"
             >
-              <ShoppingBag className="w-3.5 h-3.5 text-[#16a34a]" /> Add
+              <Minus className="w-3.5 h-3.5" />
             </button>
-
+            <span className="text-xs font-black">{qty}</span>
             <button
               type="button"
-              onClick={handleBuyNow}
-              className="flex-1 inline-flex items-center justify-center gap-1.5 bg-[#065f46] hover:bg-[#044e39] text-white text-xs font-black py-2.5 px-3 rounded-xl transition shadow-md shadow-emerald-950/20 active:scale-95 cursor-pointer"
+              onClick={() => updateCardCart(qty + 1)}
+              disabled={qty >= maxAllowedLimit || qty >= 9}
+              className="w-8 h-8 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 rounded-lg flex items-center justify-center text-white cursor-pointer font-black transition"
             >
-              <Zap className="w-3.5 h-3.5 fill-white" /> Buy
+              <Plus className="w-3.5 h-3.5" />
             </button>
-          </>
+          </div>
         )}
       </div>
     </div>

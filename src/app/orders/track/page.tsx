@@ -118,11 +118,25 @@ function TrackOrderContent() {
     }
   };
 
-  // 5-Day Delivery Window Logic
-  const isDelivered = order?.orderStatus === "DELIVERED";
-  const isReturnRequested = order?.orderStatus === "RETURN_REQUESTED";
+  // Helper function to determine correct display status (Payment Pending vs Processing)
+  const getDisplayStatus = (ord: any) => {
+    const paymentMethod = ord.paymentMethod || ord.paymentMode;
+    const paymentStatus = ord.paymentStatus || ord.status;
 
-  // Delivery date calculate karein (updatedAt or fallback createdAt)
+    // If prepaid and payment is pending or unpaid
+    if (paymentMethod === "PREPAID" && (paymentStatus === "PENDING" || paymentStatus === "PAYMENT_PENDING" || !ord.isPaid)) {
+      return "PAYMENT PENDING";
+    }
+
+    return ord.orderStatus || ord.status || "PROCESSING";
+  };
+
+  const currentStatus = order ? getDisplayStatus(order) : "";
+  const isDelivered = currentStatus === "DELIVERED";
+  const isReturnRequested = currentStatus === "RETURN_REQUESTED";
+  const isPaymentPending = currentStatus === "PAYMENT PENDING";
+
+  // Delivery date calculate karein
   const deliveryDate = order ? new Date(order.updatedAt || order.createdAt).getTime() : 0;
   const daysSinceDelivery = order ? (Date.now() - deliveryDate) / (1000 * 60 * 60 * 24) : 999;
   const isWithin5Days = daysSinceDelivery <= 5;
@@ -209,22 +223,29 @@ function TrackOrderContent() {
               <div>
                 <span
                   className={`inline-block px-3 py-1 text-xs font-black rounded-xl border ${
-                    order.orderStatus === "SHIPPED"
+                    isPaymentPending
+                      ? "bg-amber-50 text-amber-700 border-amber-200"
+                      : currentStatus === "SHIPPED"
                       ? "bg-blue-50 text-blue-700 border-blue-200"
-                      : order.orderStatus === "DELIVERED"
+                      : currentStatus === "DELIVERED"
                       ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                      : order.orderStatus === "RETURN_REQUESTED"
+                      : currentStatus === "RETURN_REQUESTED"
                       ? "bg-purple-50 text-purple-700 border-purple-200"
-                      : "bg-amber-50 text-amber-800 border-amber-200"
+                      : "bg-emerald-50 text-emerald-700 border-emerald-200"
                   }`}
                 >
-                  {order.orderStatus || "PROCESSING"}
+                  {isPaymentPending ? "⏳ PAYMENT PENDING" : currentStatus}
                 </span>
               </div>
             </div>
 
             {/* LIVE COURIER TRACKING BOX */}
-            {order.trackingNumber ? (
+            {isPaymentPending ? (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-3 text-xs font-bold text-amber-900">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                <span>Order payment was not completed. Please complete payment or place a new order.</span>
+              </div>
+            ) : order.trackingNumber ? (
               <div className="bg-blue-50/80 border border-blue-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-start gap-3">
                   <div className="p-2 bg-blue-600 text-white rounded-xl mt-0.5">

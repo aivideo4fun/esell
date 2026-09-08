@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import Image from "next/image";
@@ -15,6 +16,7 @@ import {
   CreditCard,
   Star,
   Plus,
+  Minus,
   Check,
   Flame,
   MessageCircle,
@@ -42,6 +44,7 @@ interface ProductItem {
   rating: number;
   reviews: string;
   image: string;
+  stock?: number;
 }
 
 interface CouponItem {
@@ -58,11 +61,13 @@ export default function HomePage() {
 
   const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [products, setProducts] = useState<ProductItem[]>([]);
+  const [allStoreProducts, setAllStoreProducts] = useState<ProductItem[]>([]);
   const [activeCoupon, setActiveCoupon] = useState<CouponItem | null>(null);
   const [cartCount, setCartCount] = useState(0);
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [addedItemIds, setAddedItemIds] = useState<string[]>([]);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [cartQuantities, setCartQuantities] = useState<Record<string, number>>({});
 
   // Location States
   const [pincode, setPincode] = useState("341512");
@@ -88,7 +93,7 @@ export default function HomePage() {
     }
   };
 
-  const syncCartCount = () => {
+  const syncCartState = () => {
     try {
       const savedCart = localStorage.getItem("cb_cart");
       if (savedCart) {
@@ -99,12 +104,21 @@ export default function HomePage() {
             0
           );
           setCartCount(count);
+          
+          const map: Record<string, number> = {};
+          parsed.forEach((item: any) => {
+            const pid = item.productId || item.id;
+            if (pid) map[pid] = item.quantity || 1;
+          });
+          setCartQuantities(map);
           return;
         }
       }
       setCartCount(0);
+      setCartQuantities({});
     } catch {
       setCartCount(0);
+      setCartQuantities({});
     }
   };
 
@@ -121,7 +135,7 @@ export default function HomePage() {
   };
 
   useEffect(() => {
-    syncCartCount();
+    syncCartState();
     syncCustomerAuth();
 
     const savedPin = localStorage.getItem("cb_pincode") || "341512";
@@ -152,8 +166,10 @@ export default function HomePage() {
               rating: p.rating || 4.5,
               reviews: p.reviews || "100+",
               image: p.image || "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=400&q=80",
+              stock: p.stock ?? 10,
             }));
             setProducts(mappedProducts);
+            setAllStoreProducts(mappedProducts);
           }
           if (data.coupon) {
             setActiveCoupon(data.coupon);
@@ -165,12 +181,12 @@ export default function HomePage() {
     }
     loadStoreData();
 
-    window.addEventListener("storage", syncCartCount);
+    window.addEventListener("storage", syncCartState);
     window.addEventListener("storage", syncCustomerAuth);
     window.addEventListener("customer-auth-changed", syncCustomerAuth);
 
     return () => {
-      window.removeEventListener("storage", syncCartCount);
+      window.removeEventListener("storage", syncCartState);
       window.removeEventListener("storage", syncCustomerAuth);
       window.removeEventListener("customer-auth-changed", syncCustomerAuth);
     };
@@ -188,6 +204,11 @@ export default function HomePage() {
     return () => clearInterval(timer);
   }, []);
 
+  // Filtered live search results as user types
+  const liveSearchResults = searchQuery.trim() 
+    ? allStoreProducts.filter((p) => p.title.toLowerCase().includes(searchQuery.trim().toLowerCase()))
+    : [];
+
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
@@ -195,39 +216,55 @@ export default function HomePage() {
     }
   };
 
-  const handleQuickAdd = (product: ProductItem) => {
+  const handleUpdateCartQty = (product: ProductItem, delta: number) => {
     try {
       const existing = localStorage.getItem("cb_cart");
       let cart = existing ? JSON.parse(existing) : [];
       if (!Array.isArray(cart)) cart = [];
 
-      const index = cart.findIndex((i: { productId: string }) => i.productId === product.id);
+      const index = cart.findIndex((i: { productId: string; id?: string }) => (i.productId === product.id || i.id === product.id));
+      const currentQty = index > -1 ? (cart[index].quantity || 1) : 0;
+      const newQty = currentQty + delta;
+
+      if (newQty > 0) {
+        const stockAvailable = typeof product.stock === "number" ? product.stock : 10;
+        const maxAllowedLimit = Math.min(9, stockAvailable);
+
+        if (newQty > maxAllowedLimit) {
+          if (stockAvailable < 9) {
+            alert(`Maaf kijiye, inventory mein sirf ${stockAvailable} items available hain.`);
+          } else {
+            alert("Aap maximum 9 quantity hi add kar sakte hain.");
+          }
+          return;
+        }
+      }
 
       if (index > -1) {
-        cart[index].quantity += 1;
-      } else {
+        cart[index].quantity = newQty;
+        if (cart[index].quantity <= 0) {
+          cart.splice(index, 1);
+        }
+      } else if (delta > 0) {
         cart.push({
           productId: product.id,
+          id: product.id,
           slug: product.slug,
           title: product.title,
           price: product.price,
           originalPrice: product.mrp,
           image: product.image,
           quantity: 1,
+          stock: product.stock,
           selectedSize: null,
           selectedColor: null,
         });
       }
 
       localStorage.setItem("cb_cart", JSON.stringify(cart));
-      syncCartCount();
-
-      setAddedItemIds((prev) => [...prev, product.id]);
-      setTimeout(() => {
-        setAddedItemIds((prev) => prev.filter((id) => id !== product.id));
-      }, 1500);
+      syncCartState();
     } catch (e) {
-      console.error("Error adding to cart", e);
+      console.error("Error updating cart", e);
     }
   };
 
@@ -304,7 +341,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] pb-20 md:pb-0 text-slate-900 font-sans">
-      {/* Header */}
+      {/* Header with Instant Live Search Dropdown */}
       <header className="sticky top-0 z-50 bg-white border-b border-slate-200 px-4 sm:px-8 py-2.5 shadow-xs">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -325,18 +362,46 @@ export default function HomePage() {
             </Link>
           </div>
 
-          <form onSubmit={handleSearchSubmit} className="hidden md:flex flex-1 max-w-lg mx-8 relative">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search gadgets, home utilities, electronics..."
-              className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-full text-xs font-semibold focus:outline-emerald-600"
-            />
-            <button type="submit" className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
-              <Search className="w-4 h-4" />
-            </button>
-          </form>
+          {/* Desktop Search Bar with Live Results Dropdown */}
+          <div className="hidden md:block flex-1 max-w-lg mx-8 relative">
+            <form onSubmit={handleSearchSubmit} className="relative">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => setIsSearchFocused(true)}
+                onBlur={() => setTimeout(() => setIsSearchFocused(false), 200)}
+                placeholder="Search gadgets, home utilities, electronics..."
+                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-full text-xs font-semibold focus:outline-emerald-600"
+              />
+              <button type="submit" className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+                <Search className="w-4 h-4" />
+              </button>
+            </form>
+
+            {/* Instant Dropdown Results */}
+            {isSearchFocused && searchQuery.trim().length > 0 && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden z-50 max-h-80 overflow-y-auto">
+                {liveSearchResults.length === 0 ? (
+                  <div className="p-4 text-xs font-bold text-slate-400 text-center">No products found matching "{searchQuery}"</div>
+                ) : (
+                  liveSearchResults.map((prod) => (
+                    <Link
+                      key={prod.id}
+                      href={`/product/${prod.slug || prod.id}`}
+                      className="flex items-center gap-3 p-3 hover:bg-slate-50 border-b border-slate-100 last:border-0 transition"
+                    >
+                      <img src={prod.image} alt={prod.title} className="w-10 h-10 object-cover rounded-lg border" />
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-xs font-bold text-slate-950 line-clamp-1">{prod.title}</h4>
+                        <span className="text-xs font-black text-emerald-700">₹{prod.price}</span>
+                      </div>
+                    </Link>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
 
           <div className="flex items-center gap-4 sm:gap-6">
             <Link href="/orders" className="hidden md:inline-flex text-xs font-bold text-slate-700 hover:text-emerald-600">
@@ -362,19 +427,45 @@ export default function HomePage() {
           </div>
         </div>
 
-        <form onSubmit={handleSearchSubmit} className="md:hidden mt-2 relative">
-          <input
-            id="mobile-search-input"
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search gadgets, home utilities..."
-            className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-emerald-600"
-          />
-          <button type="submit" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-            <Search className="w-3.5 h-3.5" />
-          </button>
-        </form>
+        {/* Mobile Search Bar */}
+        <div className="md:hidden mt-2 relative">
+          <form onSubmit={handleSearchSubmit}>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => setIsSearchFocused(true)}
+              onBlur={() => setTimeout(() => setIsSearchFocused(false), 200)}
+              placeholder="Search gadgets, home utilities..."
+              className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-emerald-600"
+            />
+            <button type="submit" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <Search className="w-3.5 h-3.5" />
+            </button>
+          </form>
+
+          {isSearchFocused && searchQuery.trim().length > 0 && (
+            <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden z-50 max-h-64 overflow-y-auto">
+              {liveSearchResults.length === 0 ? (
+                <div className="p-3 text-xs font-bold text-slate-400 text-center">No products found</div>
+              ) : (
+                liveSearchResults.map((prod) => (
+                  <Link
+                    key={prod.id}
+                    href={`/product/${prod.slug || prod.id}`}
+                    className="flex items-center gap-3 p-2.5 hover:bg-slate-50 border-b border-slate-100 last:border-0"
+                  >
+                    <img src={prod.image} alt={prod.title} className="w-9 h-9 object-cover rounded-lg border" />
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-xs font-bold text-slate-950 line-clamp-1">{prod.title}</h4>
+                      <span className="text-xs font-black text-emerald-700">₹{prod.price}</span>
+                    </div>
+                  </Link>
+                ))
+              )}
+            </div>
+          )}
+        </div>
       </header>
 
       {/* Delivery Ribbon */}
@@ -408,8 +499,8 @@ export default function HomePage() {
       </div>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-8 space-y-6 sm:space-y-8 mt-4">
-      
-        {/* 1. Hero Banner Section with 3 Points */}
+        
+        {/* Hero Banner */}
         <section>
           <div className="bg-[#0F172A] text-white rounded-3xl p-6 sm:p-10 relative overflow-hidden shadow-md flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="max-w-2xl">
@@ -423,23 +514,6 @@ export default function HomePage() {
               <p className="text-xs sm:text-sm text-slate-300 mt-2 font-medium">
                 100% Verified Products • Instant Prepaid Discounts • Free Shipping
               </p>
-
-              {/* 3 Checkmark Points Added Here */}
-              <div className="flex flex-wrap items-center gap-4 sm:gap-6 mt-4 text-xs font-bold text-slate-200">
-                <div className="flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Direct Supplier Dispatch</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>100% Safe Prepaid Checkout</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Truck className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Fast Delivery Pan India</span>
-                </div>
-              </div>
-
               <div className="mt-6">
                 <Link
                   href="/shop"
@@ -452,105 +526,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* 2. Value Badges */}
-        <section className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px] font-bold text-slate-700">
-          <div className="bg-white p-3.5 rounded-2xl border border-slate-200 flex items-center justify-center gap-2.5 shadow-2xs">
-            <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
-            <span>Prepaid Verified</span>
-          </div>
-          <div className="bg-white p-3.5 rounded-2xl border border-slate-200 flex items-center justify-center gap-2.5 shadow-2xs">
-            <Truck className="w-5 h-5 text-emerald-600 shrink-0" />
-            <span>Free Shipping</span>
-          </div>
-          <div className="bg-white p-3.5 rounded-2xl border border-slate-200 flex items-center justify-center gap-2.5 shadow-2xs">
-            <RotateCcw className="w-5 h-5 text-emerald-600 shrink-0" />
-            <span>Easy Returns</span>
-          </div>
-          <div className="bg-white p-3.5 rounded-2xl border border-slate-200 flex items-center justify-center gap-2.5 shadow-2xs">
-            <CreditCard className="w-5 h-5 text-emerald-600 shrink-0" />
-            <span>Secure Pay</span>
-          </div>
-        </section>
-
-        {/* 3. Top Categories */}
-        <section>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-base font-black text-slate-950">Top Categories</h2>
-            <Link href="/shop" className="text-xs font-bold text-emerald-600 hover:underline">
-              View all
-            </Link>
-          </div>
-          {categories.length === 0 ? (
-            <div className="bg-white rounded-2xl p-6 text-center text-xs text-slate-400 border border-slate-200">
-              No main categories available from database.
-            </div>
-          ) : (
-            <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-3 text-center">
-              {categories.map((cat, idx) => (
-                <Link
-                  key={cat.id || idx}
-                  href={`/shop?category=${encodeURIComponent(cat.slug || cat.name.toLowerCase().replace(/\s+/g, "-"))}`}
-                  className="flex flex-col items-center gap-1.5 group p-2.5 bg-white rounded-2xl border border-slate-100 shadow-2xs hover:border-emerald-300 transition"
-                >
-                  <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center text-2xl group-hover:scale-110 transition">
-                    {cat.icon || "📦"}
-                  </div>
-                  <span className="text-[11px] font-bold text-slate-700 line-clamp-1 group-hover:text-emerald-700">
-                    {cat.name}
-                  </span>
-                </Link>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* 4. Deal of the Day (Moved Up) */}
-        <section>
-          <div className="bg-emerald-50/70 border border-emerald-200 rounded-3xl p-5 sm:p-6">
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-              <div className="flex items-center gap-2 text-sm font-black text-emerald-900">
-                <Flame className="w-4 h-4 text-emerald-600 fill-emerald-600" />
-                <span>DEAL OF THE DAY</span>
-              </div>
-              <div className="flex items-center gap-1.5 text-xs font-black">
-                <span className="bg-slate-900 text-white px-2 py-1 rounded-md">{String(timeLeft.hours).padStart(2, "0")}h</span>
-                <span>:</span>
-                <span className="bg-slate-900 text-white px-2 py-1 rounded-md">{String(timeLeft.minutes).padStart(2, "0")}m</span>
-                <span>:</span>
-                <span className="bg-slate-900 text-white px-2 py-1 rounded-md">{String(timeLeft.seconds).padStart(2, "0")}s</span>
-              </div>
-            </div>
-
-            {products[0] && (
-              <div className="bg-white rounded-2xl p-4 flex flex-col sm:flex-row gap-4 border border-slate-200 items-center">
-                <img
-                  src={products[0].image}
-                  alt={products[0].title}
-                  className="w-32 h-32 rounded-xl object-cover shrink-0"
-                />
-                <div className="flex-1 flex flex-col justify-between w-full">
-                  <div>
-                    <h3 className="text-sm font-black text-slate-900 line-clamp-2">{products[0].title}</h3>
-                  </div>
-                  <div className="flex items-center justify-between mt-4">
-                    <div>
-                      <span className="text-lg font-black text-emerald-700">₹{products[0].price}</span>
-                      <span className="text-xs line-through text-slate-400 ml-1">₹{products[0].mrp}</span>
-                    </div>
-                    <Link
-                      href={`/product/${products[0].slug || products[0].id}`}
-                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl transition"
-                    >
-                      Shop Now
-                    </Link>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* 5. Best Selling Products (Moved Up) */}
+        {/* Best Selling Products */}
         <section>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-base font-black text-slate-950">Best Selling Products</h2>
@@ -559,107 +535,41 @@ export default function HomePage() {
             </Link>
           </div>
 
-          {products.length === 0 ? (
-            <div className="bg-white rounded-2xl p-10 text-center text-xs text-slate-400 border border-slate-200">
-              No products found from database. Please add products via Admin Panel.
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
-              {products.map((item) => {
-                const isAdded = addedItemIds.includes(item.id);
-                return (
-                  <div key={item.id} className="bg-white rounded-2xl border border-slate-200 p-3 sm:p-4 shadow-2xs flex flex-col justify-between">
-                    <div>
-                      <Link href={`/product/${item.slug || item.id}`} className="block aspect-square bg-slate-50 rounded-xl overflow-hidden mb-2 relative">
-                        <img src={item.image} alt={item.title} className="w-full h-full object-cover" />
-                        <span className="absolute top-2 right-2 bg-emerald-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded-md">
-                          {item.discount}
-                        </span>
-                      </Link>
-                      <Link href={`/product/${item.slug || item.id}`}>
-                        <h3 className="text-xs sm:text-sm font-bold text-slate-900 line-clamp-2">{item.title}</h3>
-                      </Link>
-                    </div>
-                    <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between">
-                      <div>
-                        <div className="text-xs sm:text-sm font-black text-slate-950">₹{item.price}</div>
-                        <div className="text-[10px] text-slate-400 line-through">₹{item.mrp}</div>
-                      </div>
-                      <button
-                        onClick={() => handleQuickAdd(item)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-1 cursor-pointer transition ${
-                          isAdded ? "bg-emerald-600 text-white" : "bg-emerald-50 hover:bg-emerald-100 text-emerald-700"
-                        }`}
-                      >
-                        {isAdded ? <Check className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
-                        {isAdded ? "Added" : "Add"}
-                      </button>
-                    </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+            {products.map((item) => {
+              const qty = cartQuantities[item.id] || 0;
+              return (
+                <div key={item.id} className="bg-white rounded-2xl border border-slate-200 p-3 sm:p-4 shadow-2xs flex flex-col justify-between">
+                  <div>
+                    <Link href={`/product/${item.slug || item.id}`} className="block aspect-square bg-slate-50 rounded-xl overflow-hidden mb-2 relative">
+                      <img src={item.image} alt={item.title} className="w-full h-full object-cover" />
+                    </Link>
+                    <Link href={`/product/${item.slug || item.id}`}>
+                      <h3 className="text-xs sm:text-sm font-bold text-slate-900 line-clamp-2">{item.title}</h3>
+                    </Link>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        {/* 6. Benefits & Dynamic Admin Coupon Banner (Moved Down) */}
-        <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-[#064E3B] text-white rounded-3xl p-6 text-center flex flex-col justify-center">
-            <h3 className="text-xs font-black uppercase tracking-widest text-emerald-300 mb-4">
-              PREPAID ORDER BENEFITS
-            </h3>
-            <div className="grid grid-cols-3 gap-2 text-[11px] font-bold">
-              <div className="flex flex-col items-center gap-1.5">
-                <div className="w-10 h-10 rounded-full bg-emerald-800/80 flex items-center justify-center">
-                  <CreditCard className="w-5 h-5 text-emerald-300" />
+                  <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between">
+                    <div className="text-xs sm:text-sm font-black text-slate-950">₹{item.price}</div>
+                    {qty > 0 ? (
+                      <div className="flex items-center bg-emerald-600 text-white rounded-xl overflow-hidden shadow-xs">
+                        <button onClick={() => handleUpdateCartQty(item, -1)} className="p-1.5 hover:bg-emerald-700 transition">
+                          <Minus className="w-3.5 h-3.5" />
+                        </button>
+                        <span className="w-6 text-center text-xs font-black">{qty}</span>
+                        <button onClick={() => handleUpdateCartQty(item, 1)} disabled={qty >= 9} className="p-1.5 hover:bg-emerald-700 disabled:opacity-40 transition">
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <button onClick={() => handleUpdateCartQty(item, 1)} className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-black transition flex items-center gap-1 border border-emerald-200">
+                        <ShoppingBag className="w-3.5 h-3.5" /> Add
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <span>Extra 5% Off</span>
-              </div>
-              <div className="flex flex-col items-center gap-1.5">
-                <div className="w-10 h-10 rounded-full bg-emerald-800/80 flex items-center justify-center">
-                  <Truck className="w-5 h-5 text-emerald-300" />
-                </div>
-                <span>Faster Shipping</span>
-              </div>
-              <div className="flex flex-col items-center gap-1.5">
-                <div className="w-10 h-10 rounded-full bg-emerald-800/80 flex items-center justify-center">
-                  <ShieldCheck className="w-5 h-5 text-emerald-300" />
-                </div>
-                <span>Priority Support</span>
-              </div>
-            </div>
+              );
+            })}
           </div>
-
-          <div className="bg-rose-50 border border-rose-200 rounded-3xl p-6 flex items-center justify-between">
-            <div>
-              <span className="text-base">🎉</span>
-              <h4 className="text-xs font-black uppercase tracking-wider text-rose-600 mt-1">SPECIAL OFFER</h4>
-              <h3 className="text-base font-black text-slate-950 mt-0.5">
-                {activeCoupon ? (activeCoupon.discountType === "PERCENTAGE" ? `${activeCoupon.discountValue}% OFF` : activeCoupon.discountType === "FLAT" ? `Flat ₹${activeCoupon.discountValue} OFF` : "Free Shipping Offer") : "Get Flat 10% Off"}
-              </h3>
-              <p className="text-xs text-slate-600 font-medium">{activeCoupon?.description || "On Your Next Order"}</p>
-              <div className="mt-2.5 inline-block px-3 py-1 bg-white border border-rose-200 rounded-lg text-xs font-black font-mono text-rose-700">
-                Use Code: {activeCoupon?.code || "CATCH10"}
-              </div>
-            </div>
-            <div className="text-5xl">🎁</div>
-          </div>
-        </section>
-
-        {/* 7. WhatsApp Support */}
-        <section>
-          <a
-            href="https://wa.me/917976152206?text=Hi%20CatchBuddy%2C%20I%20need%20help%20with%20my%20order"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-900 font-bold text-xs hover:bg-emerald-100 transition"
-          >
-            <MessageCircle className="w-6 h-6 text-emerald-600 shrink-0" />
-            <div className="flex-1">
-              <div className="text-sm font-black">Need Help? Chat with us on WhatsApp</div>
-              <div className="text-xs text-emerald-700 font-medium">+91 7976152206</div>
-            </div>
-          </a>
         </section>
       </main>
 

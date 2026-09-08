@@ -25,6 +25,7 @@ interface CartItem {
   originalPrice: number;
   image: string;
   quantity: number;
+  stock?: number;
   selectedSize?: string | null;
   selectedColor?: string | null;
 }
@@ -65,12 +66,27 @@ export default function CartPage() {
 
   const updateQuantity = (index: number, delta: number) => {
     const updated = [...cart];
-    const newQty = updated[index].quantity + delta;
+    const currentItem = updated[index];
+    const newQty = currentItem.quantity + delta;
+
     if (newQty <= 0) {
       updated.splice(index, 1);
     } else {
-      updated[index].quantity = newQty;
+      // Strict Rule: Max 9 items per product in cart, or available inventory stock
+      const stockLimit = typeof currentItem.stock === "number" ? currentItem.stock : 99;
+      const maxAllowed = Math.min(9, stockLimit);
+
+      if (newQty > maxAllowed) {
+        if (stockLimit < 9) {
+          alert(`Maaf kijiye, inventory mein sirf ${stockLimit} items available hain.`);
+        } else {
+          alert("Aap cart mein ek product ki maximum 9 quantity hi rakh sakte hain.");
+        }
+        return;
+      }
+      currentItem.quantity = newQty;
     }
+
     setCart(updated);
     localStorage.setItem("cb_cart", JSON.stringify(updated));
     window.dispatchEvent(new Event("storage"));
@@ -259,19 +275,20 @@ export default function CartPage() {
                     )}
                   </div>
 
-                  {/* Quantity Controller */}
+                  {/* Quantity Controller (Strict Max 9 Limit) */}
                   <div className="flex items-center justify-between mt-3">
                     <div className="flex items-center border border-slate-200 rounded-xl bg-slate-50">
                       <button
                         onClick={() => updateQuantity(index, -1)}
-                        className="p-1.5 text-slate-600 hover:bg-slate-200 rounded-l-xl transition"
+                        className="p-1.5 text-slate-600 hover:bg-slate-200 rounded-l-xl transition cursor-pointer"
                       >
                         <Minus className="w-3 h-3" />
                       </button>
                       <span className="w-8 text-center text-xs font-black">{item.quantity}</span>
                       <button
                         onClick={() => updateQuantity(index, 1)}
-                        className="p-1.5 text-slate-600 hover:bg-slate-200 rounded-r-xl transition"
+                        disabled={item.quantity >= 9}
+                        className="p-1.5 text-slate-600 hover:bg-slate-200 disabled:opacity-40 rounded-r-xl transition cursor-pointer"
                       >
                         <Plus className="w-3 h-3" />
                       </button>
