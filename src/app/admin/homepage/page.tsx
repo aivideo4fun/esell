@@ -11,11 +11,11 @@ export default function AdminHomepageManager() {
   const [subtitle, setSubtitle] = useState("100% Verified Products • Instant Prepaid Discounts • Free Shipping");
   
   const [products, setProducts] = useState<any[]>([]);
-  const [selectedDealId, setSelectedDealId] = useState("");
+  // 5 Deal slots state
+  const [dealIds, setDealIds] = useState<string[]>(["", "", "", "", ""]);
   const [savedMsg, setSavedMsg] = useState(false);
 
   useEffect(() => {
-    // Load saved settings
     const savedBanner = localStorage.getItem("cb_admin_hero_banner");
     if (savedBanner) {
       try {
@@ -27,24 +27,42 @@ export default function AdminHomepageManager() {
       } catch {}
     }
 
-    const savedDeal = localStorage.getItem("cb_admin_deal_id");
-    if (savedDeal) {
-      setSelectedDealId(savedDeal);
+    const savedDeals = localStorage.getItem("cb_admin_deal_ids");
+    if (savedDeals) {
+      try {
+        const parsed = JSON.parse(savedDeals);
+        if (Array.isArray(parsed)) {
+          setDealIds(parsed);
+        }
+      } catch {}
     }
 
-    // Fetch store products for Deal of the Day dropdown
     fetch("/api/admin/products", { cache: "no-store" })
       .then((res) => res.json())
       .then((data) => {
         if (data.success && Array.isArray(data.products)) {
           setProducts(data.products);
-          if (!savedDeal && data.products.length > 0) {
-            setSelectedDealId(data.products[0].id);
+          // If no deals saved yet, default first 5 or available products to slots
+          if (!savedDeals && data.products.length > 0) {
+            const defaults = [
+              data.products[0]?.id || "",
+              data.products[1]?.id || data.products[0]?.id || "",
+              data.products[2]?.id || data.products[0]?.id || "",
+              data.products[3]?.id || data.products[0]?.id || "",
+              data.products[4]?.id || data.products[0]?.id || "",
+            ];
+            setDealIds(defaults);
           }
         }
       })
       .catch((err) => console.error(err));
   }, []);
+
+  const handleDealChange = (index: number, val: string) => {
+    const updated = [...dealIds];
+    updated[index] = val;
+    setDealIds(updated);
+  };
 
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,7 +72,9 @@ export default function AdminHomepageManager() {
       headingHighlight,
       subtitle
     }));
-    localStorage.setItem("cb_admin_deal_id", selectedDealId);
+    localStorage.setItem("cb_admin_deal_ids", JSON.stringify(dealIds));
+    
+    window.dispatchEvent(new Event("storage"));
     
     setSavedMsg(true);
     setTimeout(() => setSavedMsg(false), 2500);
@@ -67,7 +87,7 @@ export default function AdminHomepageManager() {
           <h1 className="text-xl font-black text-slate-950 flex items-center gap-2">
             <LayoutTemplate className="w-6 h-6 text-emerald-600" /> Homepage Manager &amp; Live Preview
           </h1>
-          <p className="text-xs text-slate-500">Manage Hero Banner and Deal of the Day live on storefront.</p>
+          <p className="text-xs text-slate-500">Manage Hero Banner and up to 5 rotating Deal of the Day products.</p>
         </div>
         {savedMsg && (
           <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5">
@@ -142,26 +162,32 @@ export default function AdminHomepageManager() {
           </div>
         </div>
 
-        {/* Deal of the Day Product Manager */}
+        {/* Deal of the Day 5 Products Manager */}
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs space-y-4">
           <h2 className="text-sm font-black text-slate-950 uppercase tracking-wider flex items-center gap-1.5">
-            <Flame className="w-4 h-4 text-emerald-600 fill-emerald-600" /> 2. Deal of the Day Product Selection
+            <Flame className="w-4 h-4 text-emerald-600 fill-emerald-600" /> 2. Deal of the Day (Select up to 5 Sliding Products)
           </h2>
-          <div>
-            <label className="text-xs font-bold text-slate-700 block mb-1">Select Featured Deal Product</label>
-            <select
-              value={selectedDealId}
-              onChange={(e) => setSelectedDealId(e.target.value)}
-              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-600"
-            >
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.title} (₹{p.price})
-                </option>
-              ))}
-            </select>
-            <p className="text-[11px] text-slate-500 mt-1">This product will be featured prominently in the Deal of the Day section on the homepage.</p>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {dealIds.map((dealId, idx) => (
+              <div key={idx}>
+                <label className="text-xs font-bold text-slate-700 block mb-1">Deal Slot #{idx + 1}</label>
+                <select
+                  value={dealId}
+                  onChange={(e) => handleDealChange(idx, e.target.value)}
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-600"
+                >
+                  <option value="">-- Select Product --</option>
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.title} (₹{p.price})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ))}
           </div>
+          <p className="text-[11px] text-slate-500">These selected products will automatically slide/rotate one by one on the homepage every 4 seconds.</p>
         </div>
 
         <button

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { sendFreeWhatsAppAlert } from "@/lib/whatsapp";
+import { sendBrevoEmail } from "@/lib/brevo";
 
 export const dynamic = "force-dynamic";
 
@@ -107,6 +108,7 @@ export async function POST(req: Request) {
     const rawPhone = cust.phone?.toString().trim() || existingUser.phone || "";
     const cleanPhone = rawPhone.replace(/\D/g, "").slice(-10);
     const custName = cust.fullName?.trim() || existingUser.name || "CatchBuddy Shopper";
+    const custEmail = cust.email?.trim() || existingUser.email || "";
 
     const orderNumber = `CB-${Date.now().toString().slice(-6)}`;
     const parsedAmount = parseFloat(totalAmount) || 0;
@@ -163,12 +165,21 @@ export async function POST(req: Request) {
               })),
             },
           },
-          include: { items: true, address: true, payments: true },
+          include: { 
+            items: {
+              include: {
+                product: { select: { title: true } }
+              }
+            }, 
+            address: true, 
+            payments: true 
+          },
         });
       },
       { maxWait: 15000, timeout: 15000 }
     );
 
+    // 1. WhatsApp Alert Dispatch
     try {
       sendFreeWhatsAppAlert({
         orderId: newOrder.orderNumber || newOrder.id,
@@ -180,6 +191,49 @@ export async function POST(req: Request) {
         itemsCount: items.length,
       }).catch((err) => console.error("WA Background err:", err));
     } catch {}
+
+    // 2. Brevo Order Confirmation Email Dispatch
+    if (custEmail && !custEmail.includes("@catchbuddy.local")) {
+      try {
+        const itemsListHtml = newOrder.items?.map((item: any) => `
+          <tr>
+            <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${item.product?.title || "CatchBuddy Product"} (Qty: ${item.quantity})</td>
+            <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; color: #1e293b; font-weight: bold;">₹${(item.price * item.quantity).toLocaleString("en-IN")}</td>
+          </tr>
+        `).join("") || "";
+
+        const orderEmailHtml = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;">
+            <h2 style="color: #059669; margin-top: 0;">Order Confirmation - CatchBuddy</h2>
+            <p>Hi <strong>${custName}</strong>,</p>
+            <p>Thank you for shopping with CatchBuddy! Your order has been successfully confirmed and is being prepared for express delivery.</p>
+            
+            <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #e2e8f0;">
+              <p style="margin: 0; font-size: 14px;"><strong>Order ID:</strong> #${newOrder.orderNumber || newOrder.id}</p>
+              <p style="margin: 5px 0 0 0; font-size: 14px;"><strong>Total Amount:</strong> ₹${parsedAmount.toLocaleString("en-IN")}</p>
+              <p style="margin: 5px 0 0 0; font-size: 14px;"><strong>Payment Mode:</strong> ${isCOD ? "Cash on Delivery (COD)" : "Online Prepaid"}</p>
+            </div>
+
+            <h3 style="font-size: 15px; border-bottom: 2px solid #059669; padding-bottom: 5px; color: #0f172a;">Ordered Items</h3>
+            <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+              ${itemsListHtml}
+            </table>
+
+            <p style="margin-top: 25px; font-size: 13px; color: #475569;">You can track your consignment live anytime from your <a href="https://catchbuddy.in/orders" style="color: #059669; font-weight: bold; text-decoration: underline;">CatchBuddy Orders Dashboard</a>.</p>
+            <p style="font-size: 12px; color: #94a3b8; margin-top: 30px; text-align: center;">© 2026 CatchBuddy. All rights reserved.</p>
+          </div>
+        `;
+
+        void sendBrevoEmail({
+          toEmail: custEmail,
+          toName: custName,
+          subject: `Order Confirmed! #${newOrder.orderNumber || newOrder.id} - CatchBuddy`,
+          htmlContent: orderEmailHtml,
+        });
+      } catch (emailErr) {
+        console.error("Order Email Dispatch Error:", emailErr);
+      }
+    }
 
     const response = NextResponse.json({
       success: true,

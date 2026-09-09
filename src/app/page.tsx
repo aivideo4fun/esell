@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
 import {
+  ShoppingBag,
   ShieldCheck,
   Truck,
   RotateCcw,
@@ -63,8 +64,38 @@ export default function HomePage() {
     subtitle: "100% Verified Products • Instant Prepaid Discounts • Free Shipping"
   });
 
-  // Deal of the Day Admin Selected Product State
-  const [dealProduct, setDealProduct] = useState<ProductItem | null>(null);
+  // Deal of the Day Sliding State
+  const [dealProductsList, setDealProductsList] = useState<ProductItem[]>([]);
+  const [currentDealIndex, setCurrentDealIndex] = useState(0);
+
+  const loadAdminSettingsAndProducts = (mappedProducts: ProductItem[]) => {
+    try {
+      const savedBanner = localStorage.getItem("cb_admin_hero_banner");
+      if (savedBanner) {
+        setHeroBanner(JSON.parse(savedBanner));
+      }
+
+      const savedDealsJSON = localStorage.getItem("cb_admin_deal_ids");
+      if (savedDealsJSON && mappedProducts.length > 0) {
+        const dealIds: string[] = JSON.parse(savedDealsJSON);
+        const matchedDeals = dealIds
+          .map((id) => mappedProducts.find((p) => p.id === id))
+          .filter(Boolean) as ProductItem[];
+
+        if (matchedDeals.length > 0) {
+          setDealProductsList(matchedDeals);
+          return;
+        }
+      }
+      // Fallback to first 5 products if none selected
+      if (mappedProducts.length > 0) {
+        setDealProductsList(mappedProducts.slice(0, 5));
+      }
+    } catch (e) {
+      console.error(e);
+      if (mappedProducts.length > 0) setDealProductsList(mappedProducts.slice(0, 5));
+    }
+  };
 
   useEffect(() => {
     const syncCartState = () => {
@@ -113,14 +144,11 @@ export default function HomePage() {
               discount: p.discount || "SPECIAL",
               rating: p.rating || 4.5,
               reviews: p.reviews || "100+",
-              image: p.image || "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=400&q=80",
+              image: p.image || p.images?.[0]?.url || "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=400&q=80",
               stock: p.stock ?? 10,
             }));
             setProducts(mappedProducts);
-
-            const adminDealId = localStorage.getItem("cb_admin_deal_id");
-            const foundDeal = mappedProducts.find((p: any) => p.id === adminDealId) || mappedProducts[0];
-            setDealProduct(foundDeal);
+            loadAdminSettingsAndProducts(mappedProducts);
           }
         }
 
@@ -128,21 +156,33 @@ export default function HomePage() {
         if (couponData.success && Array.isArray(couponData.coupons)) {
           setActiveCoupons(couponData.coupons);
         }
-
-        const savedBanner = localStorage.getItem("cb_admin_hero_banner");
-        if (savedBanner) {
-          setHeroBanner(JSON.parse(savedBanner));
-        }
       } catch (err) {
         console.error("Error loading store data", err);
       }
     }
     loadStoreData();
 
+    const handleStorageChange = () => {
+      if (products.length > 0) {
+        loadAdminSettingsAndProducts(products);
+      }
+    };
+    window.addEventListener("storage", handleStorageChange);
+
     return () => {
       window.removeEventListener("storage", syncCartState);
+      window.removeEventListener("storage", handleStorageChange);
     };
-  }, []);
+  }, [products.length]);
+
+  // Automatic sliding interval for Deal of the Day (every 4 seconds)
+  useEffect(() => {
+    if (dealProductsList.length <= 1) return;
+    const interval = setInterval(() => {
+      setCurrentDealIndex((prev) => (prev + 1) % dealProductsList.length);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [dealProductsList.length]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -216,6 +256,7 @@ export default function HomePage() {
   };
 
   const singleActiveCoupon = activeCoupons.length > 0 ? activeCoupons[0] : null;
+  const currentDealProduct = dealProductsList[currentDealIndex] || dealProductsList[0];
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] pb-24 text-slate-900 font-sans">
@@ -285,14 +326,14 @@ export default function HomePage() {
           )}
         </section>
 
-        {/* 3. Deal of the Day */}
-        {dealProduct && (
+        {/* 3. Deal of the Day (Sliding 5 Products) */}
+        {currentDealProduct && (
           <section>
-            <div className="bg-emerald-50/70 border border-emerald-200 rounded-3xl p-5 sm:p-6">
+            <div className="bg-emerald-50/70 border border-emerald-200 rounded-3xl p-5 sm:p-6 transition-all duration-500">
               <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
                 <div className="flex items-center gap-2 text-sm font-black text-emerald-900">
                   <Flame className="w-4 h-4 text-emerald-600 fill-emerald-600" />
-                  <span>DEAL OF THE DAY</span>
+                  <span>DEAL OF THE DAY ({currentDealIndex + 1}/{dealProductsList.length})</span>
                 </div>
                 <div className="flex items-center gap-1.5 text-xs font-black">
                   <span className="bg-slate-900 text-white px-2 py-1 rounded-md">{String(timeLeft.hours).padStart(2, "0")}h</span>
@@ -303,23 +344,23 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <div className="bg-white rounded-2xl p-4 flex flex-col sm:flex-row gap-4 border border-slate-200 items-center">
+              <div className="bg-white rounded-2xl p-4 flex flex-col sm:flex-row gap-4 border border-slate-200 items-center animate-fade-in">
                 <img
-                  src={dealProduct.image}
-                  alt={dealProduct.title}
+                  src={currentDealProduct.image}
+                  alt={currentDealProduct.title}
                   className="w-32 h-32 rounded-xl object-cover shrink-0"
                 />
                 <div className="flex-1 flex flex-col justify-between w-full">
                   <div>
-                    <h3 className="text-sm font-black text-slate-900 line-clamp-2">{dealProduct.title}</h3>
+                    <h3 className="text-sm font-black text-slate-900 line-clamp-2">{currentDealProduct.title}</h3>
                   </div>
                   <div className="flex items-center justify-between mt-4">
                     <div>
-                      <span className="text-lg font-black text-emerald-700">₹{dealProduct.price}</span>
-                      <span className="text-xs line-through text-slate-400 ml-1">₹{dealProduct.mrp}</span>
+                      <span className="text-lg font-black text-emerald-700">₹{currentDealProduct.price}</span>
+                      <span className="text-xs line-through text-slate-400 ml-1">₹{currentDealProduct.mrp}</span>
                     </div>
                     <Link
-                      href={`/product/${dealProduct.slug || dealProduct.id}`}
+                      href={`/product/${currentDealProduct.slug || currentDealProduct.id}`}
                       className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl transition"
                     >
                       Shop Now
@@ -399,7 +440,6 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Single Active Coupon Banner */}
           <div className="bg-rose-50 border border-rose-200 rounded-3xl p-6 flex flex-col justify-center space-y-2">
             <div className="flex items-center gap-2">
               <Tag className="w-5 h-5 text-rose-600" />

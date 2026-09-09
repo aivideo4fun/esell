@@ -175,14 +175,15 @@ export default function AdminOrdersPage() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "DELIVERED":
-        return "bg-green-100 text-green-800 border-green-300";
+        return "bg-emerald-100 text-emerald-800 border-emerald-300";
       case "SHIPPED":
         return "bg-blue-100 text-blue-800 border-blue-300";
-      case "RETURN_REQUESTED":
-        return "bg-purple-100 text-purple-800 border-purple-300";
       case "PROCESSING":
       case "PAID":
         return "bg-amber-100 text-amber-800 border-amber-300";
+      case "RETURNED":
+      case "REFUNDED":
+        return "bg-purple-100 text-purple-800 border-purple-300"; // Returns ke liye purple/emerald badge
       case "CANCELLED":
         return "bg-red-100 text-red-800 border-red-300";
       default:

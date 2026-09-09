@@ -5,7 +5,8 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
-    const { identifier, phone, email, name } = await req.json();
+    const body = await req.json().catch(() => ({}));
+    const { identifier, phone, email, name } = body;
     const target = (identifier || phone || email || "").trim();
 
     if (!target) {
@@ -16,27 +17,38 @@ export async function POST(req: Request) {
     }
 
     let user = null;
+    const cleanName = (name && typeof name === "string" ? name.trim() : "") || "Customer";
+
     if (target.includes("@")) {
+      const cleanEmail = target.toLowerCase();
+      
+      // Use findFirst or upsert with error boundary
       user = await prisma.user.upsert({
-        where: { email: target },
-        update: {},
+        where: { email: cleanEmail },
+        update: {
+          name: cleanName !== "Customer" ? cleanName : undefined,
+        },
         create: { 
-          email: target, 
-          name: name || "Customer",
+          email: cleanEmail, 
+          name: cleanName,
           phone: null 
         },
       });
     } else {
-      // Generate a unique fallback email to satisfy Prisma's required email schema field if any
-      const fallbackEmail = `user_${target}@catchbuddy.local`;
+      // Clean phone number (keep digits only, last 10 digits preferred)
+      const cleanPhone = target.replace(/\D/g, "").slice(-10) || target;
+      const fallbackEmail = `user_${cleanPhone}@catchbuddy.local`;
 
+      // Safely upsert by phone
       user = await prisma.user.upsert({
-        where: { phone: target },
-        update: {},
+        where: { phone: cleanPhone },
+        update: {
+          name: cleanName !== "Customer" ? cleanName : undefined,
+        },
         create: { 
-          phone: target, 
+          phone: cleanPhone, 
           email: fallbackEmail, 
-          name: name || "Customer" 
+          name: cleanName 
         },
       });
     }
@@ -48,6 +60,7 @@ export async function POST(req: Request) {
     });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Sync failed";
+    console.error("User Sync API Error:", error);
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }

@@ -23,6 +23,8 @@ import {
   ArrowLeft,
   Trash2,
   AlertCircle,
+  ShieldCheck,
+  Lock,
 } from "lucide-react";
 
 export default function CustomerAccountPage() {
@@ -37,8 +39,13 @@ export default function CustomerAccountPage() {
     name: "Customer",
     email: "",
     phone: "",
-    isEmailVerified: true,
+    isEmailVerified: false,
   });
+
+  // Email Verification & OTP States
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
 
   // Data States
   const [orders, setOrders] = useState<any[]>([]);
@@ -114,6 +121,7 @@ export default function CustomerAccountPage() {
               name: parsed.name || prev.name,
               email: activeEmail,
               phone: activePhone,
+              isEmailVerified: !!parsed.isEmailVerified,
             }));
           } catch {}
         } else {
@@ -138,7 +146,7 @@ export default function CustomerAccountPage() {
               name: dataProf.customer.name || "Customer",
               email: activeEmail,
               phone: activePhone,
-              isEmailVerified: true,
+              isEmailVerified: !!dataProf.customer.isEmailVerified,
             });
           }
         } catch {}
@@ -187,7 +195,59 @@ export default function CustomerAccountPage() {
     void loadAllCustomerData();
   }, [router]);
 
-  // Real Email & Name Update
+  // Send OTP via Brevo
+  const handleSendOtp = async () => {
+    if (!profileData.email || !profileData.email.includes("@")) {
+      alert("Kripya pehle ek valid email address enter karein.");
+      return;
+    }
+    try {
+      const res = await fetch("/api/customer/verify-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "SEND_OTP", email: profileData.email, phone: profileData.phone }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setOtpSent(true);
+        alert("OTP sent to your email successfully via Brevo!");
+      } else {
+        alert(data.error || "Failed to send OTP");
+      }
+    } catch {
+      alert("Network error sending OTP");
+    }
+  };
+
+  // Verify OTP & Permanently Lock Email
+  const handleVerifyOtpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setVerifyingOtp(true);
+    try {
+      const res = await fetch("/api/customer/verify-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "VERIFY_OTP", email: profileData.email, phone: profileData.phone, otp: otpCode }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setProfileData((prev) => ({ ...prev, isEmailVerified: true }));
+        const updated = { ...profileData, isEmailVerified: true };
+        localStorage.setItem("cb_customer", JSON.stringify(updated));
+        localStorage.setItem("cb_user", JSON.stringify(updated));
+        alert("Email verified and permanently locked!");
+        window.location.reload();
+      } else {
+        alert(data.error || "Invalid OTP");
+      }
+    } catch {
+      alert("Network error verifying OTP");
+    } finally {
+      setVerifyingOtp(false);
+    }
+  };
+
+  // Real Profile Save (Only if email not locked)
   const handleProfileSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -318,6 +378,18 @@ export default function CustomerAccountPage() {
     }
   };
 
+  const handleMenuClick = (itemId: string, link?: string) => {
+    if (itemId === "orders" || itemId === "track") {
+      router.push("/orders");
+      return;
+    }
+    if (link) {
+      router.push(link);
+      return;
+    }
+    setActiveTab(itemId);
+  };
+
   const menuItems = [
     { id: "account", label: "My Account", icon: User },
     { id: "orders", label: "My Orders", icon: Package, count: orders.length || undefined },
@@ -386,33 +458,11 @@ export default function CustomerAccountPage() {
                 const Icon = item.icon;
                 const isActive = activeTab === item.id;
 
-                if (item.link) {
-                  return (
-                    <Link
-                      key={item.id}
-                      href={item.link}
-                      className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition group"
-                    >
-                      <div className="flex items-center gap-3">
-                        <Icon className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 transition" />
-                        <span>{item.label}</span>
-                      </div>
-                      {item.count !== undefined && item.count > 0 ? (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-rose-50 text-rose-600 border border-rose-100">
-                          {item.count}
-                        </span>
-                      ) : (
-                        <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
-                      )}
-                    </Link>
-                  );
-                }
-
                 return (
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => setActiveTab(item.id)}
+                    onClick={() => handleMenuClick(item.id, item.link)}
                     className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition cursor-pointer ${
                       isActive
                         ? "bg-emerald-600 text-white shadow-sm"
@@ -490,25 +540,67 @@ export default function CustomerAccountPage() {
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <label className="text-xs font-bold text-slate-700">Email Address</label>
-                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
-                        Primary Email
-                      </span>
+                      {profileData.isEmailVerified ? (
+                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md flex items-center gap-1">
+                          <Lock className="w-3 h-3" /> Permanently Locked &amp; Verified
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                          ⚠️ Unverified (Verify to lock)
+                        </span>
+                      )}
                     </div>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                        <Mail className="w-4 h-4" />
+
+                    <div className="relative flex gap-2">
+                      <div className="relative flex-1">
+                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                          <Mail className="w-4 h-4" />
+                        </div>
+                        <input
+                          type="email"
+                          required
+                          disabled={profileData.isEmailVerified}
+                          placeholder="Enter real email address"
+                          value={profileData.email}
+                          onChange={(e) =>
+                            setProfileData({ ...profileData, email: e.target.value })
+                          }
+                          className="w-full border border-slate-200 bg-white rounded-2xl pl-10 pr-4 py-3 text-xs font-bold text-slate-900 outline-none focus:border-emerald-500 transition shadow-2xs disabled:bg-slate-100 disabled:text-slate-500"
+                        />
                       </div>
-                      <input
-                        type="email"
-                        required
-                        placeholder="Enter real email address"
-                        value={profileData.email}
-                        onChange={(e) =>
-                          setProfileData({ ...profileData, email: e.target.value })
-                        }
-                        className="w-full border border-slate-200 bg-white rounded-2xl pl-10 pr-4 py-3 text-xs font-bold text-slate-900 outline-none focus:border-emerald-500 transition shadow-2xs"
-                      />
+
+                      {!profileData.isEmailVerified && !otpSent && (
+                        <button
+                          type="button"
+                          onClick={handleSendOtp}
+                          className="px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-xs font-bold transition cursor-pointer shrink-0"
+                        >
+                          Send OTP
+                        </button>
+                      )}
                     </div>
+
+                    {/* OTP Input box if sent */}
+                    {otpSent && !profileData.isEmailVerified && (
+                      <div className="mt-3 p-3 bg-emerald-50/60 border border-emerald-200 rounded-2xl flex items-center gap-2">
+                        <input
+                          type="text"
+                          maxLength={6}
+                          placeholder="Enter OTP received on email"
+                          value={otpCode}
+                          onChange={(e) => setOtpCode(e.target.value)}
+                          className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold outline-none"
+                        />
+                        <button
+                          type="button"
+                          disabled={verifyingOtp}
+                          onClick={handleVerifyOtpSubmit}
+                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold cursor-pointer"
+                        >
+                          {verifyingOtp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Verify & Lock"}
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -547,80 +639,6 @@ export default function CustomerAccountPage() {
                     )}
                   </div>
                 </form>
-              </div>
-            )}
-
-            {/* 2. ORDERS TAB */}
-            {activeTab === "orders" && (
-              <div className="space-y-6">
-                <div>
-                  <h2 className="text-lg font-black text-slate-900">Order History</h2>
-                  <p className="text-xs text-slate-500">
-                    Track and review all purchases placed on CatchBuddy.
-                  </p>
-                </div>
-
-                {orders.length === 0 ? (
-                  <div className="text-center py-12 space-y-3">
-                    <Package className="w-12 h-12 text-slate-300 mx-auto" />
-                    <p className="text-sm font-black text-slate-700">No Orders Placed Yet</p>
-                    <Link
-                      href="/"
-                      className="inline-block px-5 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold"
-                    >
-                      Browse Catalog
-                    </Link>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {orders.map((order) => (
-                      <div
-                        key={order.id}
-                        className="p-4 border border-slate-200 rounded-2xl space-y-3"
-                      >
-                        <div className="flex items-center justify-between text-xs border-b border-slate-100 pb-2">
-                          <span className="font-mono font-bold text-slate-800">
-                            #{order.id.slice(-6).toUpperCase()}
-                          </span>
-                          <span className="font-black text-emerald-600">₹{order.totalAmount}</span>
-                        </div>
-                        <p className="text-xs text-slate-500">
-                          {new Date(order.createdAt).toLocaleDateString("en-IN")}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* 3. TRACK ORDER TAB */}
-            {activeTab === "track" && (
-              <div className="space-y-6 max-w-xl">
-                <div>
-                  <h2 className="text-lg font-black text-slate-900">Live Package Tracking</h2>
-                  <p className="text-xs text-slate-500">
-                    Enter your Order ID to see real-time transit status.
-                  </p>
-                </div>
-
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="e.g. CB-89234"
-                    className="w-full border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold outline-none focus:border-emerald-500"
-                  />
-                  <button className="px-5 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold shrink-0 cursor-pointer">
-                    Track
-                  </button>
-                </div>
-
-                <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200 text-xs text-emerald-800 space-y-1">
-                  <p className="font-bold">Standard Delivery Guarantee</p>
-                  <p className="text-[11px] text-emerald-700">
-                    All orders are dispatched via Express Courier within 24 hours.
-                  </p>
-                </div>
               </div>
             )}
 
@@ -838,7 +856,7 @@ export default function CustomerAccountPage() {
               <div className="space-y-6">
                 <div>
                   <h2 className="text-lg font-black text-slate-900">Notifications &amp; Alerts</h2>
-                  <p className="text-xs text-slate-500">Live order status and alerts.</p>
+                  <p className="text-xs text-slate-500">Live order status and admin responses.</p>
                 </div>
 
                 <div className="space-y-3">
@@ -848,6 +866,27 @@ export default function CustomerAccountPage() {
                       Prepaid orders are eligible for instant discount &amp; express delivery.
                     </p>
                   </div>
+
+                  {orders.map((o) => {
+                    const tracking = o.trackingUrl || "";
+                    if (!tracking.includes("[RETURN_REQUESTED]")) return null;
+
+                    return (
+                      <div key={o.id} className="p-4 border border-emerald-200 rounded-2xl text-xs space-y-1.5 bg-emerald-50/50">
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono font-black text-emerald-800">Order #{o.orderNumber || o.id.slice(-8)}</span>
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
+                            o.orderStatus === "CANCELLED" ? "bg-emerald-200 text-emerald-900" : "bg-amber-200 text-amber-900"
+                          }`}>
+                            {o.orderStatus || "RETURN_REQUESTED"}
+                          </span>
+                        </div>
+                        <p className="text-slate-700 font-medium">
+                          <strong>Return Appeal Status:</strong> {tracking}
+                        </p>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}

@@ -17,6 +17,10 @@ import {
   ArrowLeft,
   X,
   AlertTriangle,
+  ShieldCheck,
+  Calendar,
+  Phone,
+  Lock,
 } from "lucide-react";
 
 function TrackOrderContent() {
@@ -24,7 +28,13 @@ function TrackOrderContent() {
   const queryParam = searchParams.get("q") || searchParams.get("orderId") || "";
 
   const [orderQuery, setOrderQuery] = useState(queryParam);
+  const [mobileQuery, setMobileQuery] = useState("");
+  
+  // Verification & Order States
+  const [fetchedOrder, setFetchedOrder] = useState<any>(null);
   const [order, setOrder] = useState<any>(null);
+  const [requiresMobileVerify, setRequiresMobileVerify] = useState(false);
+  
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [copied, setCopied] = useState(false);
@@ -39,6 +49,9 @@ function TrackOrderContent() {
     if (!idToSearch.trim()) return;
     setLoading(true);
     setErrorMsg("");
+    setFetchedOrder(null);
+    setOrder(null);
+    setRequiresMobileVerify(false);
 
     try {
       const res = await fetch(`/api/orders/${encodeURIComponent(idToSearch.trim())}`, {
@@ -47,10 +60,27 @@ function TrackOrderContent() {
       const data = await res.json();
 
       if (data.success && data.order) {
-        setOrder(data.order);
+        const ord = data.order;
+        setFetchedOrder(ord);
+
+        const storedCustomer = localStorage.getItem("cb_customer") || localStorage.getItem("cb_user");
+        let sessionPhone = "";
+        if (storedCustomer) {
+          try {
+            const parsed = JSON.parse(storedCustomer);
+            sessionPhone = (parsed.mobile || parsed.phone || "").replace(/\D/g, "").slice(-10);
+          } catch {}
+        }
+
+        const orderPhone = (ord.address?.phone || ord.phone || "").replace(/\D/g, "").slice(-10);
+
+        if (sessionPhone && orderPhone && sessionPhone === orderPhone) {
+          setOrder(ord);
+        } else {
+          setRequiresMobileVerify(true);
+        }
       } else {
         setErrorMsg(data.error || "Order nahi mila. Kripya valid Order ID check karein.");
-        setOrder(null);
       }
     } catch {
       setErrorMsg("Order load karne me dikkat hui. Kripya dobara try karein.");
@@ -68,6 +98,27 @@ function TrackOrderContent() {
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     void fetchOrderDetails(orderQuery);
+  };
+
+  const handleVerifyMobile = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!fetchedOrder) return;
+
+    const enteredPhone = mobileQuery.replace(/\D/g, "").slice(-10);
+    const orderPhone = (fetchedOrder.address?.phone || fetchedOrder.phone || "").replace(/\D/g, "").slice(-10);
+
+    if (enteredPhone.length !== 10) {
+      setErrorMsg("Kripya 10-digit valid mobile number enter karein.");
+      return;
+    }
+
+    if (enteredPhone === orderPhone) {
+      setOrder(fetchedOrder);
+      setRequiresMobileVerify(false);
+      setErrorMsg("");
+    } else {
+      setErrorMsg("Mobile number match nahi hua! Suraksha ke liye galat number par order details nahi dikhayi ja sakti.");
+    }
   };
 
   const handleCopy = (text: string) => {
@@ -118,17 +169,15 @@ function TrackOrderContent() {
     }
   };
 
-  // Helper function to determine correct display status (Payment Pending vs Processing)
   const getDisplayStatus = (ord: any) => {
     const paymentMethod = ord.paymentMethod || ord.paymentMode;
     const paymentStatus = ord.paymentStatus || ord.status;
 
-    // If prepaid and payment is pending or unpaid
     if (paymentMethod === "PREPAID" && (paymentStatus === "PENDING" || paymentStatus === "PAYMENT_PENDING" || !ord.isPaid)) {
       return "PAYMENT PENDING";
     }
 
-    return ord.orderStatus || ord.status || "PROCESSING";
+    return (ord.orderStatus || ord.status || "PROCESSING").toUpperCase();
   };
 
   const currentStatus = order ? getDisplayStatus(order) : "";
@@ -136,7 +185,38 @@ function TrackOrderContent() {
   const isReturnRequested = currentStatus === "RETURN_REQUESTED";
   const isPaymentPending = currentStatus === "PAYMENT PENDING";
 
-  // Delivery date calculate karein
+  // Professional History / Timeline Generator with Dates & Times
+  const getConsignmentTimeline = (ord: any) => {
+    const st = (ord.orderStatus || ord.status || "").toUpperCase();
+    const supSt = (ord.supplierStatus || "").toUpperCase();
+    
+    const placedTime = new Date(ord.createdAt).toLocaleString("en-IN", {
+      day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit"
+    });
+    const updateTime = new Date(ord.updatedAt || ord.createdAt).toLocaleString("en-IN", {
+      day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit"
+    });
+
+    let steps = [
+      { title: "Order Placed", desc: "Order successfully confirmed & paid", time: placedTime, done: true, active: false },
+      { title: "Packed & Shipped", desc: "Consignment dispatched via express courier", time: st === "SHIPPED" || st === "DELIVERED" || st === "RETURNED" ? updateTime : "Pending dispatch", done: st === "SHIPPED" || st === "DELIVERED" || st === "RETURNED", active: st === "SHIPPED" },
+      { title: "Out for Delivery", desc: "Consignment reached local delivery hub", time: st === "DELIVERED" || st === "RETURNED" ? updateTime : "Pending", done: st === "DELIVERED" || st === "RETURNED", active: false },
+      { title: "Delivered", desc: "Successfully delivered to customer address", time: st === "DELIVERED" || st === "RETURNED" || st.includes("RETURN") ? updateTime : "Pending delivery", done: st === "DELIVERED" || st === "RETURNED" || st.includes("RETURN"), active: st === "DELIVERED" },
+    ];
+
+    if (st === "RETURN_REQUESTED" || st === "RETURN_APPROVED" || st === "RETURN_PICKUP" || st === "RETURNED" || st === "REFUNDED" || supSt.includes("RETURN") || supSt.includes("REFUND")) {
+      steps = [
+        { title: "Order Placed", desc: "Order successfully confirmed", time: placedTime, done: true, active: false },
+        { title: "Delivered", desc: "Item was delivered to customer", time: placedTime, done: true, active: false },
+        { title: "Return Requested", desc: "Customer raised return/replacement appeal", time: updateTime, done: true, active: st === "RETURN_REQUESTED" },
+        { title: "Return Approved", desc: "Admin verified and approved return request", time: st !== "RETURN_REQUESTED" ? updateTime : "Awaiting approval", done: st !== "RETURN_REQUESTED", active: st === "RETURN_APPROVED" },
+        { title: "Return Pickup Scheduled", desc: "Courier partner assigned for reverse pickup", time: st === "RETURN_PICKUP" || st === "RETURNED" || st === "REFUNDED" ? updateTime : "Scheduling pickup", done: st === "RETURN_PICKUP" || st === "RETURNED" || st === "REFUNDED", active: st === "RETURN_PICKUP" },
+        { title: "Returned & Refunded", desc: "Item received at warehouse & refund completed", time: st === "RETURNED" || st === "REFUNDED" ? updateTime : "Processing return", done: st === "RETURNED" || st === "REFUNDED", active: st === "RETURNED" || st === "REFUNDED" },
+      ];
+    }
+    return steps;
+  };
+
   const deliveryDate = order ? new Date(order.updatedAt || order.createdAt).getTime() : 0;
   const daysSinceDelivery = order ? (Date.now() - deliveryDate) / (1000 * 60 * 60 * 24) : 999;
   const isWithin5Days = daysSinceDelivery <= 5;
@@ -153,10 +233,10 @@ function TrackOrderContent() {
             <ArrowLeft className="w-4 h-4" /> Back to Store
           </Link>
           <span className="text-sm font-black text-slate-950">
-            Order Tracking &amp; Delivery Desk
+            Secure Order Tracking &amp; Delivery Desk
           </span>
           <span className="text-xs font-bold text-emerald-600 flex items-center gap-1">
-            <CheckCircle2 className="w-3.5 h-3.5" /> Live Status
+            <ShieldCheck className="w-3.5 h-3.5" /> Privacy Protected
           </span>
         </div>
       </header>
@@ -164,9 +244,9 @@ function TrackOrderContent() {
       <main className="max-w-4xl mx-auto px-4 mt-6 space-y-6">
         {/* Search Header */}
         <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs">
-          <h1 className="text-lg font-black text-slate-950">Track Your Consignment</h1>
+          <h1 className="text-lg font-black text-slate-950">Track Your Consignment Securely</h1>
           <p className="text-xs text-slate-500 font-semibold mt-0.5">
-            Enter your 6-digit Order ID (e.g. CB-608621) to check live courier dispatch.
+            Enter your Order ID. For privacy, mobile number verification is required to view live consignment details.
           </p>
 
           <form onSubmit={handleSearchSubmit} className="mt-4 flex gap-2">
@@ -186,17 +266,59 @@ function TrackOrderContent() {
               disabled={loading}
               className="px-5 py-2.5 bg-slate-950 hover:bg-slate-800 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
             >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Track"}
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify & Track"}
             </button>
           </form>
 
-          {errorMsg && (
+          {errorMsg && !requiresMobileVerify && (
             <p className="text-xs font-bold text-rose-600 mt-2">{errorMsg}</p>
           )}
         </div>
 
-        {/* Order Details Output */}
-        {order && (
+        {/* MOBILE NUMBER VERIFICATION PROMPT */}
+        {requiresMobileVerify && fetchedOrder && (
+          <div className="bg-emerald-50/80 border border-emerald-200 rounded-3xl p-6 shadow-xs space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-emerald-600 text-white rounded-2xl">
+                <Lock className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-emerald-950">Security Verification Required</h3>
+                <p className="text-xs text-emerald-800 font-medium">
+                  Order <span className="font-mono font-bold">#{fetchedOrder.orderNumber || fetchedOrder.id}</span> found. Please enter the 10-digit mobile number used during checkout to unlock tracking details.
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleVerifyMobile} className="flex flex-col sm:flex-row gap-2 max-w-md">
+              <div className="relative flex-1">
+                <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="tel"
+                  maxLength={10}
+                  value={mobileQuery}
+                  onChange={(e) => setMobileQuery(e.target.value.replace(/\D/g, ""))}
+                  placeholder="Enter 10-digit mobile number..."
+                  className="w-full pl-10 pr-4 py-2.5 bg-white border border-emerald-300 rounded-xl text-xs font-bold focus:outline-emerald-600"
+                  required
+                />
+              </div>
+              <button
+                type="submit"
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition cursor-pointer shadow-xs"
+              >
+                Unlock Tracking
+              </button>
+            </form>
+
+            {errorMsg && (
+              <p className="text-xs font-bold text-rose-600">{errorMsg}</p>
+            )}
+          </div>
+        )}
+
+        {/* Order Details Output (Unlocked) */}
+        {order && !requiresMobileVerify && (
           <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
               <div>
@@ -215,26 +337,28 @@ function TrackOrderContent() {
                     {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                   </button>
                 </div>
-                <span className="text-[10px] text-slate-400">
-                  Placed on {new Date(order.createdAt).toLocaleString("en-IN")}
+                <span className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
+                  <Calendar className="w-3.5 h-3.5" /> Placed on {new Date(order.createdAt).toLocaleString("en-IN")}
                 </span>
               </div>
 
               <div>
                 <span
-                  className={`inline-block px-3 py-1 text-xs font-black rounded-xl border ${
+                  className={`inline-block px-3 py-1 text-xs font-black rounded-xl border uppercase ${
                     isPaymentPending
                       ? "bg-amber-50 text-amber-700 border-amber-200"
                       : currentStatus === "SHIPPED"
                       ? "bg-blue-50 text-blue-700 border-blue-200"
                       : currentStatus === "DELIVERED"
                       ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                      : currentStatus === "RETURN_REQUESTED"
+                      : currentStatus === "RETURN_REQUESTED" || currentStatus === "RETURN_APPROVED" || currentStatus === "RETURN_PICKUP"
                       ? "bg-purple-50 text-purple-700 border-purple-200"
+                      : currentStatus === "RETURNED" || currentStatus === "REFUNDED"
+                      ? "bg-emerald-100 text-emerald-800 border-emerald-300"
                       : "bg-emerald-50 text-emerald-700 border-emerald-200"
                   }`}
                 >
-                  {isPaymentPending ? "⏳ PAYMENT PENDING" : currentStatus}
+                  {isPaymentPending ? "⏳ PAYMENT PENDING" : currentStatus.replace("_", " ")}
                 </span>
               </div>
             </div>
@@ -279,6 +403,42 @@ function TrackOrderContent() {
               </div>
             )}
 
+            {/* PROFESSIONAL STEP-BY-STEP PROCESS HISTORY TIMELINE WITH DATES & TIMES */}
+            <div className="space-y-4 pt-2">
+              <h2 className="text-xs font-black uppercase tracking-wider text-slate-900">
+                Real-Time Consignment History &amp; Stages
+              </h2>
+
+              <div className="relative pl-6 space-y-6 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
+                {getConsignmentTimeline(order).map((step, idx) => (
+                  <div key={idx} className="relative flex items-start justify-between gap-3">
+                    <span
+                      className={`absolute -left-6 top-0.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
+                        step.done
+                          ? "bg-emerald-600 text-white ring-4 ring-emerald-50"
+                          : "bg-slate-200 text-slate-500 ring-4 ring-slate-50"
+                      }`}
+                    >
+                      {step.done ? <CheckCircle2 className="w-3 h-3" /> : idx + 1}
+                    </span>
+
+                    <div className="space-y-0.5">
+                      <p className={`text-xs font-black ${step.done ? "text-slate-950" : "text-slate-400"}`}>
+                        {step.title}
+                      </p>
+                      <p className={`text-[11px] ${step.done ? "text-slate-600 font-medium" : "text-slate-400"}`}>
+                        {step.desc}
+                      </p>
+                    </div>
+
+                    <span className="text-[10px] font-mono font-bold text-slate-400 whitespace-nowrap bg-slate-50 px-2 py-1 rounded-md border border-slate-100">
+                      {step.time}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             {/* Return status notice */}
             {isReturnRequested && (
               <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4 text-xs text-purple-900 font-semibold space-y-1">
@@ -292,7 +452,7 @@ function TrackOrderContent() {
             )}
 
             {/* Products List */}
-            <div className="space-y-3">
+            <div className="space-y-3 pt-2">
               <h2 className="text-xs font-black uppercase tracking-wider text-slate-900">
                 Ordered Items ({order.items?.length || 1})
               </h2>
