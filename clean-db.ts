@@ -5,7 +5,6 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("🧹 Cleaning up testing data (Keeping user accounts safe)...");
 
-  // Foreign key constraints ko dhyan mein rakhte ہوئے sequence mein delete karein
   await prisma.payment.deleteMany({});
   console.log("✔ Deleted all Payments");
 
@@ -18,12 +17,8 @@ async function main() {
   await prisma.address.deleteMany({});
   console.log("✔ Deleted all Saved Addresses");
 
-  // Corrected from prisma.ticket to prisma.supportTicket
   await prisma.supportTicket.deleteMany({});
   console.log("✔ Deleted all Support Tickets");
-
-  await prisma.notification.deleteMany({});
-  console.log("✔ Deleted all Notifications");
 
   await prisma.coupon.deleteMany({});
   console.log("✔ Deleted all Coupons");

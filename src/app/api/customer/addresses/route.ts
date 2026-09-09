@@ -3,7 +3,6 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-// Helper to resolve user ID safely with 10-digit format
 async function resolveUser(email?: string | null, phone?: string | null) {
   if (!email && !phone) return null;
 
@@ -25,7 +24,6 @@ async function resolveUser(email?: string | null, phone?: string | null) {
   });
 }
 
-// 1. GET: Fetch current active saved addresses
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -53,7 +51,6 @@ export async function GET(req: Request) {
   }
 }
 
-// 2. POST: Save new address with Smart Slot Management
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -70,13 +67,11 @@ export async function POST(req: Request) {
     const user = await resolveUser(userEmail, cleanUserPhone);
 
     if (user) {
-      // Find currently active linked addresses
       const currentAddresses = await prisma.address.findMany({
         where: { userId: user.id },
         orderBy: { createdAt: "asc" },
       });
 
-      // Agar sach me 5 active addresses hain, toh sabse purane address ko unlink karke naye ke liye space banayein
       if (currentAddresses.length >= 5) {
         const oldestAddress = currentAddresses[0];
         try {
@@ -124,7 +119,6 @@ export async function POST(req: Request) {
   }
 }
 
-// 3. DELETE: Safe Unlink & Delete
 export async function DELETE(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
