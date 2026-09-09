@@ -27,21 +27,24 @@ export default function ProductCard({ product }: ProductCardProps) {
   const rawStock = Number(product.stock);
   const stockAvailable = !isNaN(rawStock) && rawStock >= 0 ? rawStock : 10;
   
-  // STRICT: Never exceed 9, regardless of stock size
-  const maxAllowedLimit = Math.min(9, stockAvailable);
-
   const imgUrl =
     product.images?.[0]?.url ||
     product.images?.[0] ||
     product.image ||
     "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=500&q=80";
 
+  // Auto fallback for originalPrice if missing in DB so discount always shows
+  const effectiveOriginalPrice = product.originalPrice && product.originalPrice > product.price 
+    ? product.originalPrice 
+    : Math.round(product.price * 1.35); // 35% higher as default MRP if not provided
+
+  const discountPercent = Math.round(((effectiveOriginalPrice - product.price) / effectiveOriginalPrice) * 100);
+
   useEffect(() => {
     try {
       const savedCart = JSON.parse(localStorage.getItem("cb_cart") || "[]");
       const item = savedCart.find((i: any) => i.productId === product.id || i.id === product.id);
       if (item) {
-        // Enforce max 9 on load if cart had more
         const currentStoredQty = item.quantity || 0;
         const clamped = currentStoredQty > 9 ? 9 : currentStoredQty;
         setQty(clamped);
@@ -59,7 +62,6 @@ export default function ProductCard({ product }: ProductCardProps) {
   const updateCardCart = (newQty: number) => {
     if (newQty < 0) newQty = 0;
 
-    // STRICT CHECK: Absolute upper bound is 9
     if (newQty > 9) {
       alert("Aap ek order mein maximum 9 quantity hi add kar sakte hain.");
       return;
@@ -86,7 +88,7 @@ export default function ProductCard({ product }: ProductCardProps) {
           slug: product.slug,
           title: product.title,
           price: product.price,
-          originalPrice: product.originalPrice || product.price * 1.5,
+          originalPrice: effectiveOriginalPrice,
           image: imgUrl,
           quantity: newQty,
           stock: product.stock,
@@ -129,25 +131,32 @@ export default function ProductCard({ product }: ProductCardProps) {
 
   return (
     <div className="bg-white rounded-3xl border border-slate-200 p-4 relative flex flex-col justify-between shadow-2xs group">
-      {/* Wishlist Button on Top-Right Corner */}
-      <button
-        type="button"
-        onClick={toggleWishlist}
-        className={`absolute top-3 right-3 p-2.5 rounded-full border shadow-xs transition cursor-pointer z-10 ${
-          isWishlisted ? "bg-rose-50 border-rose-200 text-rose-600" : "bg-white border-slate-200 text-slate-600 hover:text-rose-600"
-        }`}
-        title="Wishlist"
-      >
-        <Heart className={`w-4 h-4 ${isWishlisted ? "fill-rose-600" : ""}`} />
-      </button>
-
       <Link href={`/product/${product.slug || product.id}`} className="space-y-3 block">
+        {/* Image Container with Wishlist Button & Discount Badge */}
         <div className="aspect-square bg-slate-50 rounded-2xl overflow-hidden border border-slate-100 flex items-center justify-center relative">
           <img
             src={imgUrl}
             alt={product.title}
             className="w-full h-full object-contain p-2 group-hover:scale-105 transition duration-300"
           />
+          
+          {/* Wishlist Button nicely positioned inside the image box */}
+          <button
+            type="button"
+            onClick={toggleWishlist}
+            className={`absolute top-2.5 right-2.5 p-2 rounded-full border shadow-xs transition cursor-pointer z-10 backdrop-blur-xs ${
+              isWishlisted ? "bg-rose-50 border-rose-200 text-rose-600" : "bg-white/90 border-slate-200 text-slate-600 hover:text-rose-600"
+            }`}
+            title="Wishlist"
+          >
+            <Heart className={`w-3.5 h-3.5 ${isWishlisted ? "fill-rose-600" : ""}`} />
+          </button>
+
+          {/* Discount Badge */}
+          <span className="absolute bottom-2 left-2 bg-rose-600 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-md shadow-xs">
+            {discountPercent}% OFF
+          </span>
+
           {product.badge && (
             <span className="absolute top-2 left-2 bg-emerald-600 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-md">
               {product.badge}
@@ -161,9 +170,7 @@ export default function ProductCard({ product }: ProductCardProps) {
           </h3>
           <div className="flex items-center gap-2 mt-1.5">
             <span className="text-sm font-black text-slate-950">₹{product.price}</span>
-            {product.originalPrice && product.originalPrice > product.price && (
-              <span className="text-xs text-slate-400 line-through font-bold">₹{product.originalPrice}</span>
-            )}
+            <span className="text-xs text-slate-400 line-through font-bold">₹{effectiveOriginalPrice}</span>
           </div>
         </div>
       </Link>
@@ -191,7 +198,7 @@ export default function ProductCard({ product }: ProductCardProps) {
             <button
               type="button"
               onClick={() => updateCardCart(qty + 1)}
-              disabled={qty >= maxAllowedLimit || qty >= 9}
+              disabled={qty >= stockAvailable || qty >= 9}
               className="w-8 h-8 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 rounded-lg flex items-center justify-center text-white cursor-pointer font-black transition"
             >
               <Plus className="w-3.5 h-3.5" />

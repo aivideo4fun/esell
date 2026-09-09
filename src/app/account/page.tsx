@@ -23,7 +23,6 @@ import {
   ArrowLeft,
   Trash2,
   AlertCircle,
-  ShieldCheck,
   Lock,
 } from "lucide-react";
 
@@ -51,6 +50,8 @@ export default function CustomerAccountPage() {
   const [orders, setOrders] = useState<any[]>([]);
   const [coupons, setCoupons] = useState<any[]>([]);
   const [addresses, setAddresses] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadNotifCount, setUnreadNotifCount] = useState<number>(0);
   const [wishlistCount, setWishlistCount] = useState<number>(0);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
@@ -98,7 +99,7 @@ export default function CustomerAccountPage() {
     };
   }, []);
 
-  // 2. Load Customer Data
+  // 2. Load Customer Data & Notifications
   useEffect(() => {
     const loadAllCustomerData = async () => {
       try {
@@ -112,9 +113,7 @@ export default function CustomerAccountPage() {
         if (storedCustomer) {
           try {
             const parsed = JSON.parse(storedCustomer);
-            activeEmail = parsed.email?.includes("@catchbuddy.store")
-              ? ""
-              : parsed.email || "";
+            activeEmail = parsed.email?.includes("@catchbuddy.store") ? "" : parsed.email || "";
             activePhone = (parsed.mobile || parsed.phone || "").replace(/\D/g, "").slice(-10);
             setProfileData((prev) => ({
               ...prev,
@@ -174,6 +173,27 @@ export default function CustomerAccountPage() {
           if (dataAddr.success) setAddresses(dataAddr.addresses || []);
         } catch {}
 
+        // Notifications (Admin broadcast & alerts)
+        try {
+          const resNotif = await fetch("/api/admin/notifications", { cache: "no-store" });
+          const dataNotif = await resNotif.json();
+          if (dataNotif.success) {
+            const allNotifs = dataNotif.notifications || [];
+            setNotifications(allNotifs);
+
+            // Check read status from localStorage
+            const lastReadId = localStorage.getItem("cb_last_read_notification");
+            if (allNotifs.length > 0) {
+              if (!lastReadId) {
+                setUnreadNotifCount(allNotifs.length);
+              } else {
+                const unreadIndex = allNotifs.findIndex((n: any) => n.id === lastReadId);
+                setUnreadNotifCount(unreadIndex === -1 ? allNotifs.length : unreadIndex);
+              }
+            }
+          }
+        } catch {}
+
         // Support Tickets
         if (activeEmail) {
           try {
@@ -194,6 +214,24 @@ export default function CustomerAccountPage() {
 
     void loadAllCustomerData();
   }, [router]);
+
+  // When user clicks Notifications tab, mark all as read and remove badge
+  const handleTabSwitch = (tabId: string, link?: string) => {
+    if (tabId === "orders" || tabId === "track") {
+      router.push("/orders");
+      return;
+    }
+    if (link) {
+      router.push(link);
+      return;
+    }
+    setActiveTab(tabId);
+
+    if (tabId === "notifications" && notifications.length > 0) {
+      setUnreadNotifCount(0);
+      localStorage.setItem("cb_last_read_notification", notifications[0].id);
+    }
+  };
 
   // Send OTP via Brevo
   const handleSendOtp = async () => {
@@ -247,7 +285,7 @@ export default function CustomerAccountPage() {
     }
   };
 
-  // Real Profile Save (Only if email not locked)
+  // Real Profile Save
   const handleProfileSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -378,18 +416,6 @@ export default function CustomerAccountPage() {
     }
   };
 
-  const handleMenuClick = (itemId: string, link?: string) => {
-    if (itemId === "orders" || itemId === "track") {
-      router.push("/orders");
-      return;
-    }
-    if (link) {
-      router.push(link);
-      return;
-    }
-    setActiveTab(itemId);
-  };
-
   const menuItems = [
     { id: "account", label: "My Account", icon: User },
     { id: "orders", label: "My Orders", icon: Package, count: orders.length || undefined },
@@ -408,7 +434,7 @@ export default function CustomerAccountPage() {
       count: addresses.length || undefined,
     },
     { id: "coupons", label: "Coupons", icon: TicketPercent, count: coupons.length || 1 },
-    { id: "notifications", label: "Notifications", icon: Bell },
+    { id: "notifications", label: "Notifications", icon: Bell, count: unreadNotifCount > 0 ? unreadNotifCount : undefined },
     {
       id: "support",
       label: "Help & Support",
@@ -462,7 +488,7 @@ export default function CustomerAccountPage() {
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => handleMenuClick(item.id, item.link)}
+                    onClick={() => handleTabSwitch(item.id, item.link)}
                     className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition cursor-pointer ${
                       isActive
                         ? "bg-emerald-600 text-white shadow-sm"
@@ -476,7 +502,7 @@ export default function CustomerAccountPage() {
                     {item.count !== undefined && item.count > 0 ? (
                       <span
                         className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
-                          isActive ? "bg-white text-emerald-700" : "bg-slate-100 text-slate-600"
+                          isActive ? "bg-white text-emerald-700" : "bg-rose-500 text-white"
                         }`}
                       >
                         {item.count}
@@ -569,6 +595,7 @@ export default function CustomerAccountPage() {
                         />
                       </div>
 
+                      {/* Send OTP button hidden permanently once verified */}
                       {!profileData.isEmailVerified && !otpSent && (
                         <button
                           type="button"
@@ -856,7 +883,7 @@ export default function CustomerAccountPage() {
               <div className="space-y-6">
                 <div>
                   <h2 className="text-lg font-black text-slate-900">Notifications &amp; Alerts</h2>
-                  <p className="text-xs text-slate-500">Live order status and admin responses.</p>
+                  <p className="text-xs text-slate-500">Live order status and admin announcements.</p>
                 </div>
 
                 <div className="space-y-3">
@@ -866,6 +893,19 @@ export default function CustomerAccountPage() {
                       Prepaid orders are eligible for instant discount &amp; express delivery.
                     </p>
                   </div>
+
+                  {/* Render Admin Broadcast Notifications */}
+                  {notifications.map((n) => (
+                    <div key={n.id} className="p-4 border border-emerald-200 rounded-2xl text-xs space-y-1 bg-emerald-50/50">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-emerald-900">📢 {n.title}</span>
+                        <span className="text-[10px] text-slate-400">
+                          {new Date(n.createdAt).toLocaleDateString("en-IN")}
+                        </span>
+                      </div>
+                      <p className="text-slate-700">{n.message}</p>
+                    </div>
+                  ))}
 
                   {orders.map((o) => {
                     const tracking = o.trackingUrl || "";

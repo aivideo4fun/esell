@@ -399,7 +399,7 @@ export default function GSTInvoicePage() {
 
         {/* Footer */}
         <div className="mt-8 pt-4 border-t border-slate-200 text-center text-[10px] text-slate-400 font-semibold">
-          Thank you for shopping with CatchBuddy! For support inquiries: support@catchbuddy.store
+          Thank you for shopping with CatchBuddy! For support inquiries: support@catchbuddy.in
         </div>
 
       </div>

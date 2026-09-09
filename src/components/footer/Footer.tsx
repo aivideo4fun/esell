@@ -149,7 +149,7 @@ export default function Footer() {
             <div className="space-y-2 text-xs text-slate-400">
               <p className="flex items-center gap-2">
                 <Mail className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>support@catchbuddy.store</span>
+                <span>support@catchbuddy.in</span>
               </p>
               <p className="flex items-center gap-2">
                 <Phone className="w-4 h-4 text-emerald-400 shrink-0" />

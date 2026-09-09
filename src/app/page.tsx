@@ -16,7 +16,8 @@ import {
   Flame,
   MessageCircle,
   ArrowRight,
-  Tag
+  Tag,
+  Heart
 } from "lucide-react";
 
 interface CategoryItem {
@@ -55,6 +56,7 @@ export default function HomePage() {
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [activeCoupons, setActiveCoupons] = useState<CouponItem[]>([]);
   const [cartQuantities, setCartQuantities] = useState<Record<string, number>>({});
+  const [wishlistIds, setWishlistIds] = useState<string[]>([]);
 
   // Dynamic Admin Banner State
   const [heroBanner, setHeroBanner] = useState({
@@ -87,7 +89,6 @@ export default function HomePage() {
           return;
         }
       }
-      // Fallback to first 5 products if none selected
       if (mappedProducts.length > 0) {
         setDealProductsList(mappedProducts.slice(0, 5));
       }
@@ -98,7 +99,7 @@ export default function HomePage() {
   };
 
   useEffect(() => {
-    const syncCartState = () => {
+    const syncState = () => {
       try {
         const savedCart = localStorage.getItem("cb_cart");
         if (savedCart) {
@@ -110,17 +111,21 @@ export default function HomePage() {
               if (pid) map[pid] = item.quantity || 1;
             });
             setCartQuantities(map);
-            return;
           }
         }
-        setCartQuantities({});
-      } catch {
-        setCartQuantities({});
-      }
+
+        const savedWishlist = localStorage.getItem("cb_wishlist");
+        if (savedWishlist) {
+          const parsedWish = JSON.parse(savedWishlist);
+          if (Array.isArray(parsedWish)) {
+            setWishlistIds(parsedWish.map((i: any) => i.id || i));
+          }
+        }
+      } catch {}
     };
 
-    syncCartState();
-    window.addEventListener("storage", syncCartState);
+    syncState();
+    window.addEventListener("storage", syncState);
 
     async function loadStoreData() {
       try {
@@ -140,7 +145,7 @@ export default function HomePage() {
               slug: p.slug || p.id,
               title: p.title || p.name || "Product",
               price: p.price || 0,
-              mrp: p.mrp || Math.round((p.price || 100) * 1.3),
+              mrp: p.mrp || Math.round((p.price || 100) * 1.35),
               discount: p.discount || "SPECIAL",
               rating: p.rating || 4.5,
               reviews: p.reviews || "100+",
@@ -162,20 +167,35 @@ export default function HomePage() {
     }
     loadStoreData();
 
-    const handleStorageChange = () => {
-      if (products.length > 0) {
-        loadAdminSettingsAndProducts(products);
-      }
-    };
-    window.addEventListener("storage", handleStorageChange);
-
     return () => {
-      window.removeEventListener("storage", syncCartState);
-      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("storage", syncState);
     };
-  }, [products.length]);
+  }, []);
 
-  // Automatic sliding interval for Deal of the Day (every 4 seconds)
+  const toggleWishlist = (item: ProductItem, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      let savedWishlist = JSON.parse(localStorage.getItem("cb_wishlist") || "[]");
+      if (!Array.isArray(savedWishlist)) savedWishlist = [];
+
+      const exists = savedWishlist.some((i: any) => (i.id === item.id || i === item.id));
+      let updated = [];
+
+      if (exists) {
+        updated = savedWishlist.filter((i: any) => (i.id !== item.id && i !== item.id));
+      } else {
+        updated = [...savedWishlist, { id: item.id, slug: item.slug, title: item.title, price: item.price, image: item.image }];
+      }
+
+      localStorage.setItem("cb_wishlist", JSON.stringify(updated));
+      window.dispatchEvent(new Event("storage"));
+      setWishlistIds(updated.map((i: any) => i.id || i));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
     if (dealProductsList.length <= 1) return;
     const interval = setInterval(() => {
@@ -327,50 +347,74 @@ export default function HomePage() {
         </section>
 
         {/* 3. Deal of the Day (Sliding 5 Products) */}
-        {currentDealProduct && (
-          <section>
-            <div className="bg-emerald-50/70 border border-emerald-200 rounded-3xl p-5 sm:p-6 transition-all duration-500">
-              <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-                <div className="flex items-center gap-2 text-sm font-black text-emerald-900">
-                  <Flame className="w-4 h-4 text-emerald-600 fill-emerald-600" />
-                  <span>DEAL OF THE DAY ({currentDealIndex + 1}/{dealProductsList.length})</span>
-                </div>
-                <div className="flex items-center gap-1.5 text-xs font-black">
-                  <span className="bg-slate-900 text-white px-2 py-1 rounded-md">{String(timeLeft.hours).padStart(2, "0")}h</span>
-                  <span>:</span>
-                  <span className="bg-slate-900 text-white px-2 py-1 rounded-md">{String(timeLeft.minutes).padStart(2, "0")}m</span>
-                  <span>:</span>
-                  <span className="bg-slate-900 text-white px-2 py-1 rounded-md">{String(timeLeft.seconds).padStart(2, "0")}s</span>
-                </div>
-              </div>
+        {currentDealProduct && (() => {
+          const dealMrp = currentDealProduct.mrp > currentDealProduct.price ? currentDealProduct.mrp : Math.round(currentDealProduct.price * 1.35);
+          const dealDiscount = Math.round(((dealMrp - currentDealProduct.price) / dealMrp) * 100);
+          const isWish = wishlistIds.includes(currentDealProduct.id);
 
-              <div className="bg-white rounded-2xl p-4 flex flex-col sm:flex-row gap-4 border border-slate-200 items-center animate-fade-in">
-                <img
-                  src={currentDealProduct.image}
-                  alt={currentDealProduct.title}
-                  className="w-32 h-32 rounded-xl object-cover shrink-0"
-                />
-                <div className="flex-1 flex flex-col justify-between w-full">
-                  <div>
-                    <h3 className="text-sm font-black text-slate-900 line-clamp-2">{currentDealProduct.title}</h3>
+          return (
+            <section>
+              <div className="bg-emerald-50/70 border border-emerald-200 rounded-3xl p-5 sm:p-6 transition-all duration-500">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                  <div className="flex items-center gap-2 text-sm font-black text-emerald-900">
+                    <Flame className="w-4 h-4 text-emerald-600 fill-emerald-600" />
+                    <span>DEAL OF THE DAY ({currentDealIndex + 1}/{dealProductsList.length})</span>
                   </div>
-                  <div className="flex items-center justify-between mt-4">
+                  <div className="flex items-center gap-1.5 text-xs font-black">
+                    <span className="bg-slate-900 text-white px-2 py-1 rounded-md">{String(timeLeft.hours).padStart(2, "0")}h</span>
+                    <span>:</span>
+                    <span className="bg-slate-900 text-white px-2 py-1 rounded-md">{String(timeLeft.minutes).padStart(2, "0")}m</span>
+                    <span>:</span>
+                    <span className="bg-slate-900 text-white px-2 py-1 rounded-md">{String(timeLeft.seconds).padStart(2, "0")}s</span>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-2xl p-4 flex flex-col sm:flex-row gap-4 border border-slate-200 items-center animate-fade-in relative overflow-hidden">
+                  
+                  {/* Top-Left Discount Badge */}
+                  <span className="absolute top-2 left-2 bg-rose-600 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-md shadow-xs z-10">
+                    {dealDiscount}% OFF
+                  </span>
+
+                  {/* Top-Right Wishlist Button */}
+                  <button
+                    type="button"
+                    onClick={(e) => toggleWishlist(currentDealProduct, e)}
+                    className={`absolute top-2 right-2 p-2 rounded-full border shadow-xs transition cursor-pointer z-10 backdrop-blur-xs ${
+                      isWish ? "bg-rose-50 border-rose-200 text-rose-600" : "bg-white/90 border-slate-200 text-slate-600 hover:text-rose-600"
+                    }`}
+                    title="Wishlist"
+                  >
+                    <Heart className={`w-3.5 h-3.5 ${isWish ? "fill-rose-600" : ""}`} />
+                  </button>
+
+                  <img
+                    src={currentDealProduct.image}
+                    alt={currentDealProduct.title}
+                    className="w-32 h-32 rounded-xl object-cover shrink-0"
+                  />
+                  <div className="flex-1 flex flex-col justify-between w-full">
                     <div>
-                      <span className="text-lg font-black text-emerald-700">₹{currentDealProduct.price}</span>
-                      <span className="text-xs line-through text-slate-400 ml-1">₹{currentDealProduct.mrp}</span>
+                      <h3 className="text-sm font-black text-slate-900 line-clamp-2">{currentDealProduct.title}</h3>
                     </div>
-                    <Link
-                      href={`/product/${currentDealProduct.slug || currentDealProduct.id}`}
-                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl transition"
-                    >
-                      Shop Now
-                    </Link>
+                    <div className="flex items-center justify-between mt-4">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-lg font-black text-emerald-700">₹{currentDealProduct.price}</span>
+                        <span className="text-xs line-through text-slate-400 font-bold">₹{dealMrp}</span>
+                      </div>
+                      <Link
+                        href={`/product/${currentDealProduct.slug || currentDealProduct.id}`}
+                        className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl transition"
+                      >
+                        Shop Now
+                      </Link>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </section>
-        )}
+            </section>
+          );
+        })()}
 
         {/* 4. Best Selling Products */}
         <section>
@@ -384,18 +428,47 @@ export default function HomePage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
             {products.map((item) => {
               const qty = cartQuantities[item.id] || 0;
+              const itemMrp = item.mrp > item.price ? item.mrp : Math.round(item.price * 1.35);
+              const itemDiscount = Math.round(((itemMrp - item.price) / itemMrp) * 100);
+              const isWish = wishlistIds.includes(item.id);
+
               return (
-                <div key={item.id} className="bg-white rounded-2xl border border-slate-200 p-3 sm:p-4 shadow-2xs flex flex-col justify-between">
+                <div key={item.id} className="bg-white rounded-2xl border border-slate-200 p-3 sm:p-4 shadow-2xs flex flex-col justify-between group relative">
                   <div>
-                    <Link href={`/product/${item.slug || item.id}`} className="block aspect-square bg-slate-50 rounded-xl overflow-hidden mb-2 relative">
-                      <img src={item.image} alt={item.title} className="w-full h-full object-cover" />
-                    </Link>
+                    <div className="block aspect-square bg-slate-50 rounded-xl overflow-hidden mb-2 relative">
+                      <Link href={`/product/${item.slug || item.id}`} className="block w-full h-full">
+                        <img src={item.image} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                      </Link>
+
+                      {/* Top-Left Discount Badge */}
+                      <span className="absolute top-2 left-2 bg-rose-600 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-md shadow-xs z-10 pointer-events-none">
+                        {itemDiscount}% OFF
+                      </span>
+
+                      {/* Top-Right Wishlist Button */}
+                      <button
+                        type="button"
+                        onClick={(e) => toggleWishlist(item, e)}
+                        className={`absolute top-2 right-2 p-2 rounded-full border shadow-xs transition cursor-pointer z-10 backdrop-blur-xs ${
+                          isWish ? "bg-rose-50 border-rose-200 text-rose-600" : "bg-white/90 border-slate-200 text-slate-600 hover:text-rose-600"
+                        }`}
+                        title="Wishlist"
+                      >
+                        <Heart className={`w-3.5 h-3.5 ${isWish ? "fill-rose-600" : ""}`} />
+                      </button>
+                    </div>
+
                     <Link href={`/product/${item.slug || item.id}`}>
                       <h3 className="text-xs sm:text-sm font-bold text-slate-900 line-clamp-2">{item.title}</h3>
                     </Link>
                   </div>
+
                   <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between">
-                    <div className="text-xs sm:text-sm font-black text-slate-950">₹{item.price}</div>
+                    <div className="flex flex-col">
+                      <span className="text-xs sm:text-sm font-black text-slate-950">₹{item.price}</span>
+                      <span className="text-[10px] text-slate-400 line-through font-bold">₹{itemMrp}</span>
+                    </div>
+
                     {qty > 0 ? (
                       <div className="flex items-center bg-emerald-600 text-white rounded-xl overflow-hidden shadow-xs">
                         <button onClick={() => handleUpdateCartQty(item, -1)} className="p-1.5 hover:bg-emerald-700 transition cursor-pointer">
