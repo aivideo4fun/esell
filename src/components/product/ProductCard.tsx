@@ -27,11 +27,12 @@ export default function ProductCard({ product }: ProductCardProps) {
   const rawStock = Number(product.stock);
   const stockAvailable = !isNaN(rawStock) && rawStock >= 0 ? rawStock : 10;
   
+  // Fallback to CatchBuddy logo (/logo.png) if no image exists
   const imgUrl =
     product.images?.[0]?.url ||
     product.images?.[0] ||
     product.image ||
-    "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=500&q=80";
+    "/logo.png";
 
   // Auto fallback for originalPrice if missing in DB so discount always shows
   const effectiveOriginalPrice = product.originalPrice && product.originalPrice > product.price 
