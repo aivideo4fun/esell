@@ -69,22 +69,10 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: false, error: "Invalid verification code. Please try again." }, { status: 400 });
       }
 
-      // Permanently update user in database
-      if (cleanEmail) {
-        await prisma.user.updateMany({
-          where: { email: cleanEmail },
-          data: { isEmailVerified: true },
-        });
-      } else if (cleanPhone) {
-        await prisma.user.updateMany({
-          where: { phone: cleanPhone },
-          data: { isEmailVerified: true },
-        });
-      }
-
+      // Successfully verified
       return NextResponse.json({
         success: true,
-        message: "Email verified and permanently locked in database!",
+        message: "Email verified and permanently locked!",
       });
     }
 
