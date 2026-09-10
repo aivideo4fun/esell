@@ -16,18 +16,31 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Complete shipping address is required" }, { status: 400 });
     }
 
-    // Create Order in Database via Prisma using standard schema fields
+    const fullAddressString = `${shippingAddress.street}, ${shippingAddress.city}, ${shippingAddress.state || "Rajasthan"} - ${shippingAddress.pincode}`;
+
+    // Create Order in Database via Prisma handling Address relation correctly
     const newOrder = await prisma.order.create({
       data: {
         name: shippingAddress.fullName,
         phone: shippingAddress.phone,
-        address: `${shippingAddress.street}, ${shippingAddress.city}, ${shippingAddress.state || "Rajasthan"} - ${shippingAddress.pincode}`,
         paymentMethod: paymentMethod || "COD",
         paymentStatus: paymentMethod === "COD" ? "PENDING" : "PAID",
         status: "PLACED",
         totalAmount: Number(totalAmount || 0),
         discount: Number(discount || 0),
         couponCode: couponCode || null,
+        // Handling address as a relation or creating it inline based on Prisma schema relation
+        address: {
+          create: {
+            fullName: shippingAddress.fullName,
+            phone: shippingAddress.phone,
+            street: shippingAddress.street,
+            city: shippingAddress.city || "",
+            state: shippingAddress.state || "Rajasthan",
+            pincode: shippingAddress.pincode || "",
+            address: fullAddressString,
+          },
+        },
         items: {
           create: items.map((item: any) => ({
             productId: item.productId || item.id || "unknown",
