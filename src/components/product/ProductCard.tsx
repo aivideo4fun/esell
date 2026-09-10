@@ -23,23 +23,21 @@ export default function ProductCard({ product }: ProductCardProps) {
   const [qty, setQty] = useState(0);
   const [isWishlisted, setIsWishlisted] = useState(false);
 
-  // Absolute max limit is strictly 9 per order rule
   const rawStock = Number(product.stock);
   const stockAvailable = !isNaN(rawStock) && rawStock >= 0 ? rawStock : 10;
   
-  // Fallback to CatchBuddy logo (/logo.png) if no image exists
+  // STRICT FALLBACK TO /logo.png IF NO IMAGE EXISTS
   const imgUrl =
     product.images?.[0]?.url ||
     product.images?.[0] ||
     product.image ||
     "/logo.png";
 
-  // Auto fallback for originalPrice if missing in DB so discount always shows
-  const effectiveOriginalPrice = product.originalPrice && product.originalPrice > product.price 
-    ? product.originalPrice 
-    : Math.round(product.price * 1.35); // 35% higher as default MRP if not provided
+  const effectiveOriginalPrice = product.originalPrice && Number(product.originalPrice) > Number(product.price) 
+    ? Number(product.originalPrice) 
+    : Math.round(Number(product.price) * 1.35);
 
-  const discountPercent = Math.round(((effectiveOriginalPrice - product.price) / effectiveOriginalPrice) * 100);
+  const discountPercent = Math.round(((effectiveOriginalPrice - Number(product.price)) / effectiveOriginalPrice) * 100);
 
   useEffect(() => {
     try {
@@ -133,7 +131,6 @@ export default function ProductCard({ product }: ProductCardProps) {
   return (
     <div className="bg-white rounded-3xl border border-slate-200 p-4 relative flex flex-col justify-between shadow-2xs group">
       <Link href={`/product/${product.slug || product.id}`} className="space-y-3 block">
-        {/* Image Container with Wishlist Button & Discount Badge */}
         <div className="aspect-square bg-slate-50 rounded-2xl overflow-hidden border border-slate-100 flex items-center justify-center relative">
           <img
             src={imgUrl}
@@ -141,7 +138,6 @@ export default function ProductCard({ product }: ProductCardProps) {
             className="w-full h-full object-contain p-2 group-hover:scale-105 transition duration-300"
           />
           
-          {/* Wishlist Button nicely positioned inside the image box */}
           <button
             type="button"
             onClick={toggleWishlist}
@@ -153,10 +149,12 @@ export default function ProductCard({ product }: ProductCardProps) {
             <Heart className={`w-3.5 h-3.5 ${isWishlisted ? "fill-rose-600" : ""}`} />
           </button>
 
-          {/* Discount Badge */}
-          <span className="absolute bottom-2 left-2 bg-rose-600 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-md shadow-xs">
-            {discountPercent}% OFF
-          </span>
+          {/* EXACT TOP-LEFT CORNER RED DISCOUNT BADGE */}
+          {discountPercent > 0 && (
+            <span className="absolute top-2 left-2 bg-rose-600 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-md shadow-xs z-20">
+              {discountPercent}% OFF
+            </span>
+          )}
 
           {product.badge && (
             <span className="absolute top-2 left-2 bg-emerald-600 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-md">
@@ -176,7 +174,6 @@ export default function ProductCard({ product }: ProductCardProps) {
         </div>
       </Link>
 
-      {/* Dynamic Add / Counter strictly bounded to max 9 */}
       <div className="pt-3 mt-2 border-t border-slate-100">
         {qty === 0 ? (
           <button

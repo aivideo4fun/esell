@@ -140,18 +140,23 @@ export default function HomePage() {
             setCategories(data.categories);
           }
           if (data.products?.length > 0) {
-            const mappedProducts = data.products.map((p: any) => ({
-              id: p.id,
-              slug: p.slug || p.id,
-              title: p.title || p.name || "Product",
-              price: p.price || 0,
-              mrp: p.mrp || Math.round((p.price || 100) * 1.35),
-              discount: p.discount || "SPECIAL",
-              rating: p.rating || 4.5,
-              reviews: p.reviews || "100+",
-              image: p.image || p.images?.[0]?.url || "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=400&q=80",
-              stock: p.stock ?? 10,
-            }));
+            const mappedProducts = data.products.map((p: any) => {
+              const rawImg = p.image || p.images?.[0]?.url || p.images?.[0] || "";
+              const finalImg = rawImg && rawImg.trim() !== "" && !rawImg.includes("unsplash.com") ? rawImg : "/logo.png";
+
+              return {
+                id: p.id,
+                slug: p.slug || p.id,
+                title: p.title || p.name || "Product",
+                price: p.price || 0,
+                mrp: p.mrp || Math.round((p.price || 100) * 1.35),
+                discount: p.discount || "SPECIAL",
+                rating: p.rating || 4.5,
+                reviews: p.reviews || "100+",
+                image: finalImg,
+                stock: p.stock ?? 10,
+              };
+            });
             setProducts(mappedProducts);
             loadAdminSettingsAndProducts(mappedProducts);
           }
@@ -253,7 +258,7 @@ export default function HomePage() {
           title: product.title,
           price: product.price,
           originalPrice: product.mrp,
-          image: product.image,
+          image: product.image || "/logo.png",
           quantity: 1,
           stock: product.stock,
           selectedSize: null,
@@ -371,8 +376,8 @@ export default function HomePage() {
 
                 <div className="bg-white rounded-2xl p-4 flex flex-col sm:flex-row gap-4 border border-slate-200 items-center animate-fade-in relative overflow-hidden">
                   
-                  {/* Top-Left Discount Badge */}
-                  <span className="absolute top-2 left-2 bg-rose-600 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-md shadow-xs z-10">
+                  {/* TOP-LEFT CORNER DISCOUNT BADGE */}
+                  <span className="absolute top-2.5 left-2.5 bg-rose-600 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-md shadow-xs z-20">
                     {dealDiscount}% OFF
                   </span>
 
@@ -380,7 +385,7 @@ export default function HomePage() {
                   <button
                     type="button"
                     onClick={(e) => toggleWishlist(currentDealProduct, e)}
-                    className={`absolute top-2 right-2 p-2 rounded-full border shadow-xs transition cursor-pointer z-10 backdrop-blur-xs ${
+                    className={`absolute top-2.5 right-2.5 p-2 rounded-full border shadow-xs transition cursor-pointer z-10 backdrop-blur-xs ${
                       isWish ? "bg-rose-50 border-rose-200 text-rose-600" : "bg-white/90 border-slate-200 text-slate-600 hover:text-rose-600"
                     }`}
                     title="Wishlist"
@@ -389,9 +394,9 @@ export default function HomePage() {
                   </button>
 
                   <img
-                    src={currentDealProduct.image}
+                    src={currentDealProduct.image || "/logo.png"}
                     alt={currentDealProduct.title}
-                    className="w-32 h-32 rounded-xl object-cover shrink-0"
+                    className="w-32 h-32 rounded-xl object-contain bg-slate-50 border border-slate-100 shrink-0 p-2"
                   />
                   <div className="flex-1 flex flex-col justify-between w-full">
                     <div>
@@ -435,13 +440,13 @@ export default function HomePage() {
               return (
                 <div key={item.id} className="bg-white rounded-2xl border border-slate-200 p-3 sm:p-4 shadow-2xs flex flex-col justify-between group relative">
                   <div>
-                    <div className="block aspect-square bg-slate-50 rounded-xl overflow-hidden mb-2 relative">
-                      <Link href={`/product/${item.slug || item.id}`} className="block w-full h-full">
-                        <img src={item.image} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                    <div className="block aspect-square bg-slate-50 rounded-xl overflow-hidden mb-2 relative flex items-center justify-center">
+                      <Link href={`/product/${item.slug || item.id}`} className="block w-full h-full flex items-center justify-center">
+                        <img src={item.image || "/logo.png"} alt={item.title} className="w-full h-full object-contain p-2 group-hover:scale-105 transition duration-300" />
                       </Link>
 
-                      {/* Top-Left Discount Badge */}
-                      <span className="absolute top-2 left-2 bg-rose-600 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-md shadow-xs z-10 pointer-events-none">
+                      {/* TOP-LEFT CORNER DISCOUNT BADGE */}
+                      <span className="absolute top-2.5 left-2.5 bg-rose-600 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-md shadow-xs z-20 pointer-events-none">
                         {itemDiscount}% OFF
                       </span>
 
@@ -449,7 +454,7 @@ export default function HomePage() {
                       <button
                         type="button"
                         onClick={(e) => toggleWishlist(item, e)}
-                        className={`absolute top-2 right-2 p-2 rounded-full border shadow-xs transition cursor-pointer z-10 backdrop-blur-xs ${
+                        className={`absolute top-2.5 right-2.5 p-2 rounded-full border shadow-xs transition cursor-pointer z-10 backdrop-blur-xs ${
                           isWish ? "bg-rose-50 border-rose-200 text-rose-600" : "bg-white/90 border-slate-200 text-slate-600 hover:text-rose-600"
                         }`}
                         title="Wishlist"

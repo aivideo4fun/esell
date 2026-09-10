@@ -33,7 +33,6 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [addingToCart, setAddingToCart] = useState(false);
 
-  // Database-backed Reviews State
   const [reviews, setReviews] = useState<any[]>([]);
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [reviewerName, setReviewerName] = useState("");
@@ -51,25 +50,23 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
         if (data.success && data.product) {
           const p = data.product;
           setProduct(p);
-          const defaultImg = p.images?.[0]?.url || p.images?.[0] || p.image || "";
+          
+          const defaultImg = p.images?.[0]?.url || p.images?.[0] || p.image || "/logo.png";
           setSelectedImage(defaultImg);
           if (p.sizes && p.sizes.length > 0) setSelectedSize(p.sizes[0]);
           if (p.colors && p.colors.length > 0) setSelectedColor(p.colors[0]);
 
-          // Strict Inventory & Max 9 Limit enforcement
           const stockAvailable = typeof p.stock === "number" ? p.stock : 10;
           const maxAllowed = Math.min(9, stockAvailable);
           if (quantity > maxAllowed) {
             setQuantity(maxAllowed > 0 ? maxAllowed : 1);
           }
 
-          // Wishlist Check
           const savedWishlist = JSON.parse(localStorage.getItem("cb_wishlist") || "[]");
           if (savedWishlist.some((item: any) => item.id === p.id || item.slug === slug)) {
             setIsWishlisted(true);
           }
 
-          // Fetch DB reviews
           try {
             const revRes = await fetch(`/api/products/reviews?productId=${p.id}`);
             const revData = await revRes.json();
@@ -81,9 +78,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
                 { userName: "Anita Patel", rating: 4, comment: "Genuine utility product, totally worth it.", createdAt: "2026-03-05" }
               ]);
             }
-          } catch {
-            // fallback
-          }
+          } catch {}
         } else {
           setProduct(null);
         }
@@ -102,8 +97,6 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
     if (newQty < 1) newQty = 1;
 
     const stockAvailable = product && typeof product.stock === "number" ? product.stock : 10;
-    
-    // Strict Rule: Max 9 items OR available inventory, whichever is lower
     const upperLimit = Math.min(9, stockAvailable);
     if (newQty > upperLimit) {
       if (stockAvailable < 9) {
@@ -157,8 +150,8 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
         slug: slug,
         title: product.title,
         price: product.price,
-        originalPrice: product.originalPrice || product.price * 1.5,
-        image: selectedImage,
+        originalPrice: effectiveOriginalPrice,
+        image: selectedImage || "/logo.png",
         quantity: quantity,
         selectedSize: selectedSize || null,
         selectedColor: selectedColor || null,
@@ -263,8 +256,15 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
     );
   }
 
-  const imagesList = product.images && product.images.length > 0 ? product.images : [selectedImage];
+  const imagesList = product.images && product.images.length > 0 ? product.images : [selectedImage || "/logo.png"];
   const currentStock = typeof product.stock === "number" ? product.stock : 10;
+  
+  // Robust Calculation for Original Price and Discount Percentage
+  const effectiveOriginalPrice = product.originalPrice && Number(product.originalPrice) > Number(product.price) 
+    ? Number(product.originalPrice) 
+    : Math.round(Number(product.price) * 1.35);
+
+  const discountPercent = Math.round(((effectiveOriginalPrice - Number(product.price)) / effectiveOriginalPrice) * 100);
 
   return (
     <div className="min-h-screen bg-slate-50 pb-48 text-slate-900 font-sans">
@@ -273,14 +273,22 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 mt-6 space-y-8">
         <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 shadow-xs">
           
-          {/* Left: Product Images Gallery */}
+          {/* Left: Product Image & Top-Left Red Discount Badge */}
           <div className="lg:col-span-6 space-y-4">
             <div className="aspect-square bg-slate-100 rounded-2xl overflow-hidden border border-slate-200 relative flex items-center justify-center">
               <img
-                src={selectedImage}
+                src={selectedImage || "/logo.png"}
                 alt={product.title}
                 className="w-full h-full object-contain p-4"
               />
+
+              {/* DISCOUNT BADGE FIXED AT TOP-LEFT CORNER */}
+              {discountPercent > 0 && (
+                <span className="absolute top-4 left-4 bg-rose-600 text-white text-xs font-black px-3 py-1 rounded-lg shadow-md uppercase tracking-wider z-10">
+                  {discountPercent}% OFF
+                </span>
+              )}
+
               <button
                 onClick={toggleWishlist}
                 className={`absolute top-4 right-4 p-3 rounded-full border shadow-md transition cursor-pointer z-10 ${
@@ -295,7 +303,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
             {imagesList.length > 1 && (
               <div className="flex gap-2 overflow-x-auto pb-2">
                 {imagesList.map((imgObj: any, idx: number) => {
-                  const url = typeof imgObj === "string" ? imgObj : imgObj?.url;
+                  const url = typeof imgObj === "string" ? imgObj : (imgObj?.url || "/logo.png");
                   return (
                     <button
                       key={idx}
@@ -304,7 +312,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
                         selectedImage === url ? "border-emerald-600" : "border-slate-200 opacity-70"
                       }`}
                     >
-                      <img src={url} alt="" className="w-full h-full object-cover" />
+                      <img src={url || "/logo.png"} alt="" className="w-full h-full object-cover" />
                     </button>
                   );
                 })}
@@ -312,11 +320,11 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
             )}
           </div>
 
-          {/* Right: Product Details & Actions */}
+          {/* Right: Product Details & Description */}
           <div className="lg:col-span-6 space-y-6">
             <div>
               <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md">
-                {product.category || "Viral Gadget"}
+                {product.category?.name || "Viral Gadget"}
               </span>
               <h1 className="text-xl sm:text-2xl font-black text-slate-950 mt-2">
                 {product.title}
@@ -330,23 +338,22 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
               </div>
             </div>
 
-            <div className="flex items-baseline gap-3">
-              <span className="text-2xl font-black text-slate-950">₹{product.price}</span>
-              {product.originalPrice && product.originalPrice > product.price && (
-                <span className="text-sm text-slate-400 line-through font-bold">
-                  ₹{product.originalPrice}
-                </span>
-              )}
-              <span className={`text-xs font-bold px-2 py-0.5 rounded ${currentStock > 0 ? "text-emerald-600 bg-emerald-50" : "text-rose-600 bg-rose-50"}`}>
-                {currentStock > 0 ? `In Stock (${currentStock} available)` : "Out of Stock"}
-              </span>
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
+              <div className="flex items-baseline gap-3">
+                <span className="text-2xl font-black text-slate-950">₹{product.price}</span>
+                <span className="text-sm text-slate-400 line-through font-bold">₹{effectiveOriginalPrice}</span>
+                {discountPercent > 0 && (
+                  <span className="bg-rose-600 text-white text-xs font-black px-2 py-0.5 rounded-md uppercase">
+                    {discountPercent}% OFF
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] font-bold text-emerald-700">
+                Inclusive of all taxes • Free Delivery only on Prepaid Orders
+              </p>
             </div>
 
-            <p className="text-xs text-slate-600 leading-relaxed">
-              {product.description || product.subtitle || "High quality utility product with fast delivery and COD available."}
-            </p>
-
-            {/* Quantity Selector (Strictly Max 9 & Inventory Clamped) */}
+            {/* Quantity Selector */}
             <div className="space-y-2">
               <label className="text-xs font-black text-slate-800 uppercase tracking-wider">Quantity (Max 9 per order)</label>
               <div className="flex items-center border border-slate-200 rounded-xl bg-slate-50 w-32">
@@ -368,8 +375,16 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
               </div>
             </div>
 
-            {/* Desktop Action Buttons */}
-            <div className="hidden sm:flex items-center gap-3 pt-2">
+            {/* PRODUCT DESCRIPTION */}
+            {product.description && (
+              <div className="space-y-2 pt-2 border-t border-slate-100">
+                <h3 className="text-xs font-black text-slate-950 uppercase tracking-wider">Product Description</h3>
+                <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-line">{product.description}</p>
+              </div>
+            )}
+
+            {/* ADD TO CART & BUY NOW BUTTONS PLACED BELOW DESCRIPTION */}
+            <div className="hidden sm:flex items-center gap-3 pt-4 border-t border-slate-100">
               <button
                 onClick={toggleWishlist}
                 className={`p-3.5 rounded-2xl border transition cursor-pointer flex items-center justify-center ${
@@ -398,7 +413,6 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
               </button>
             </div>
 
-            {/* Trust Badges */}
             <div className="grid grid-cols-3 gap-3 pt-4 border-t border-slate-100 text-center">
               <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col items-center">
                 <ShieldCheck className="w-5 h-5 text-emerald-600 mb-1" />
@@ -417,7 +431,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
           </div>
         </div>
 
-        {/* Database Reviews Section */}
+        {/* Verified Reviews Section */}
         <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 space-y-6 shadow-xs">
           <div className="border-b border-slate-100 pb-4 flex items-center justify-between">
             <h2 className="text-sm font-black text-slate-950 uppercase tracking-wider">Customer Reviews &amp; Ratings</h2>
@@ -497,7 +511,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
         </div>
       </main>
 
-      {/* Mobile Sticky Bottom Action Bar */}
+      {/* Mobile Sticky Bar */}
       <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-3 z-50 flex items-center gap-3 shadow-2xl">
         <button
           type="button"

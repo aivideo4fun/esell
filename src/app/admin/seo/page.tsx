@@ -1,23 +1,66 @@
 "use client";
 
-import { useState } from "react";
-import { Search, Save, CheckCircle2, Globe } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Search, Save, CheckCircle2, Globe, Loader2 } from "lucide-react";
 
 export default function AdminSeoPage() {
   const [seoConfig, setSeoConfig] = useState({
-    metaTitle: "CatchBuddy - Premium Lifestyle Gadgets & Smart Accessories",
-    metaDescription: "Shop authentic gadgets, fast magnetic chargers, ANC wireless earbuds with flat ₹50 off on prepaid orders and express shipping.",
-    keywords: "online shopping, catchbuddy, gadgets, electronic accessories, best offers",
-    ogImage: "https://catchbuddy.com/og-banner.jpg",
-    googleSiteVerification: "google-site-verification-cb-98218",
+    metaTitle: "",
+    metaDescription: "",
+    keywords: "",
+    googleSiteVerification: "",
   });
+  const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
 
-  const handleSave = (e: React.FormEvent) => {
+  useEffect(() => {
+    async function fetchSeo() {
+      try {
+        const res = await fetch("/api/admin/seo", { cache: "no-store" });
+        const data = await res.json();
+        if (data.success && data.seo) {
+          setSeoConfig(data.seo);
+        }
+      } catch (err) {
+        console.error("Failed to load SEO config", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    void fetchSeo();
+  }, []);
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+    setSaved(false);
+    setErrorMsg("");
+
+    try {
+      const res = await fetch("/api/admin/seo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(seoConfig),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2500);
+      } else {
+        setErrorMsg(data.error || "Failed to save");
+      }
+    } catch (err) {
+      setErrorMsg("Network error while saving SEO settings");
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="p-12 flex items-center justify-center">
+        <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
@@ -33,7 +76,13 @@ export default function AdminSeoPage() {
       <form onSubmit={handleSave} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-5 text-xs">
         {saved && (
           <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl font-bold text-emerald-800 flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" /> SEO Meta configurations saved successfully!
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" /> SEO Meta configurations saved to database successfully!
+          </div>
+        )}
+
+        {errorMsg && (
+          <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl font-bold text-rose-800">
+            {errorMsg}
           </div>
         )}
 
@@ -54,7 +103,7 @@ export default function AdminSeoPage() {
             required
             rows={3}
             value={seoConfig.metaDescription}
-            onChange={(e) => setSeoConfig({ ...seoConfig, metaDescription: e.target.value })}
+            onChange={(e) => setseoConfig({ ...seoConfig, metaDescription: e.target.value })}
             className="w-full border border-slate-200 rounded-xl px-3.5 py-2 font-semibold outline-none focus:border-emerald-500"
           />
         </div>

@@ -10,7 +10,6 @@ import {
   Search, 
   Loader2, 
   Sparkles,
-  Check,
   ArrowRight,
   Plus,
   Minus
@@ -35,6 +34,7 @@ interface Product {
   price: number;
   originalPrice?: number;
   images?: ProductImage[];
+  image?: string;
   category?: ProductCategory;
   stock?: number;
 }
@@ -152,7 +152,6 @@ function ShopContent() {
     return matchesCategory && matchesSearch;
   });
 
-  // Strict Max 9 Limit & Inventory Validation Handler
   const handleUpdateCartQty = (product: Product, delta: number, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -166,9 +165,12 @@ function ShopContent() {
       const currentQty = index > -1 ? (cart[index].quantity || 1) : 0;
       const newQty = currentQty + delta;
 
+      const imgUrl = product.images?.[0]?.url || product.images?.[0] || product.image || "/logo.png";
+      const effOrigPrice = product.originalPrice && product.originalPrice > product.price ? product.originalPrice : Math.round(product.price * 1.35);
+
       if (newQty > 0) {
         const stockAvailable = typeof product.stock === "number" ? product.stock : 10;
-        const maxAllowedLimit = Math.min(9, stockAvailable); // Strict max 9 rule
+        const maxAllowedLimit = Math.min(9, stockAvailable);
 
         if (newQty > maxAllowedLimit) {
           if (stockAvailable < 9) {
@@ -191,8 +193,8 @@ function ShopContent() {
           slug: product.slug || product.id,
           title: product.title,
           price: product.price,
-          originalPrice: product.originalPrice || product.price * 1.3,
-          image: product.images?.[0]?.url || "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=500&q=80",
+          originalPrice: effOrigPrice,
+          image: imgUrl,
           quantity: 1,
           stock: product.stock,
         });
@@ -214,11 +216,12 @@ function ShopContent() {
   const handleWishlistToggle = (product: Product, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    const imgUrl = product.images?.[0]?.url || product.images?.[0] || product.image || "/logo.png";
     toggleWishlist({
       id: product.id,
       title: product.title,
       price: product.price,
-      image: product.images?.[0]?.url || "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=500&q=80",
+      image: imgUrl,
     });
   };
 
@@ -259,7 +262,7 @@ function ShopContent() {
             <div className="w-full h-40 sm:h-52 bg-gradient-to-r from-emerald-950 to-slate-900 relative flex items-center">
               {activeShopBanner.imageUrl && (
                 <img
-                  src={activeShopBanner.imageUrl}
+                  src={activeShopBanner.imageUrl || "/logo.png"}
                   alt={activeShopBanner.title}
                   className="w-full h-full object-cover group-hover:scale-105 transition duration-500 opacity-85"
                 />
@@ -322,13 +325,22 @@ function ShopContent() {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
             {filteredProducts.map((product) => {
+              // STRICT FALLBACK TO /logo.png
               const imgUrl =
                 product.images?.[0]?.url ||
-                "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=500&q=80";
+                product.images?.[0] ||
+                product.image ||
+                "/logo.png";
+
               const isWishlisted = wishlist.some((w) => w.id === product.id);
               const isOutOfStock = (product.stock ?? 1) <= 0;
               const qty = cartQuantities[product.id] || 0;
               const productUrl = `/product/${product.slug || product.id}`;
+
+              const effOrigPrice = product.originalPrice && product.originalPrice > product.price 
+                ? product.originalPrice 
+                : Math.round(product.price * 1.35);
+              const discountPercent = Math.round(((effOrigPrice - product.price) / effOrigPrice) * 100);
 
               return (
                 <Link
@@ -336,20 +348,24 @@ function ShopContent() {
                   href={productUrl}
                   className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs hover:shadow-md transition flex flex-col justify-between group cursor-pointer"
                 >
-                  <div className="relative aspect-square bg-slate-50 overflow-hidden">
+                  <div className="relative aspect-square bg-slate-50 overflow-hidden flex items-center justify-center">
                     <img
                       src={imgUrl}
                       alt={product.title}
-                      className={`w-full h-full object-contain p-4 group-hover:scale-105 transition duration-300 ${
+                      className={`w-full h-full object-contain p-3 group-hover:scale-105 transition duration-300 ${
                         isOutOfStock ? "grayscale opacity-60" : ""
                       }`}
                     />
                     
-                    {isOutOfStock && (
+                    {isOutOfStock ? (
                       <span className="absolute top-2.5 left-2.5 bg-rose-600 text-white text-[10px] font-black px-2 py-0.5 rounded-md">
                         OUT OF STOCK
                       </span>
-                    )}
+                    ) : discountPercent > 0 ? (
+                      <span className="absolute bottom-2 left-2 bg-rose-600 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-md shadow-xs">
+                        {discountPercent}% OFF
+                      </span>
+                    ) : null}
 
                     <button
                       onClick={(e) => handleWishlistToggle(product, e)}
@@ -370,9 +386,9 @@ function ShopContent() {
                     <div className="flex items-center justify-between pt-2 border-t border-slate-100">
                       <div>
                         <span className="font-black text-sm text-slate-900">₹{product.price}</span>
-                        {product.originalPrice && product.originalPrice > product.price && (
+                        {effOrigPrice > product.price && (
                           <span className="text-[10px] text-slate-400 line-through ml-1.5">
-                            ₹{product.originalPrice}
+                            ₹{effOrigPrice}
                           </span>
                         )}
                       </div>

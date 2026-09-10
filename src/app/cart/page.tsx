@@ -11,8 +11,6 @@ import {
   ArrowRight,
   ShoppingBag,
   Tag,
-  ShieldCheck,
-  ArrowLeft,
   Loader2,
 } from "lucide-react";
 import Header from "@/components/Header";
@@ -49,15 +47,17 @@ export default function CartPage() {
         if (Array.isArray(parsed)) setCart(parsed);
       }
 
-      // Restore applied coupon if already in session
+      // Restore applied coupon if user previously entered it during session
       const savedCoupon = localStorage.getItem("cb_applied_coupon");
       if (savedCoupon) {
         const cData = JSON.parse(savedCoupon);
-        setCouponCode(cData.code || "");
-        setDiscountValue(Number(cData.value || 0));
-        setDiscountType(cData.type || "PERCENT");
-        setAppliedCouponName(cData.code || "");
-        setCouponApplied(true);
+        if (cData && cData.code) {
+          setCouponCode(cData.code);
+          setDiscountValue(Number(cData.value || 0));
+          setDiscountType(cData.type || "PERCENT");
+          setAppliedCouponName(cData.code);
+          setCouponApplied(true);
+        }
       }
     } catch (e) {
       console.error("Failed to load cart", e);
@@ -72,7 +72,6 @@ export default function CartPage() {
     if (newQty <= 0) {
       updated.splice(index, 1);
     } else {
-      // Strict Rule: Max 9 items per product in cart, or available inventory stock
       const stockLimit = typeof currentItem.stock === "number" ? currentItem.stock : 99;
       const maxAllowed = Math.min(9, stockLimit);
 
@@ -99,75 +98,86 @@ export default function CartPage() {
     window.dispatchEvent(new Event("storage"));
   };
 
-  // Real Database Coupon Validation with robust property matching & saving to localStorage
+  const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
+  // STRICT REAL DATABASE COUPON VALIDATION
   const applyCoupon = async () => {
     if (!couponCode.trim()) return;
 
     setValidatingCoupon(true);
     setCouponMsg("");
 
+    const codeInput = couponCode.trim().toUpperCase();
+
     try {
       const res = await fetch("/api/admin/coupons", { cache: "no-store" });
       const data = await res.json();
 
       let matchedCoupon = null;
-      if (data.success && Array.isArray(data.coupons)) {
-        matchedCoupon = data.coupons.find(
-          (c: any) => c.code?.trim().toUpperCase() === couponCode.trim().toUpperCase()
-        );
+      const couponsList = Array.isArray(data) ? data : (data.coupons || data.data || []);
+
+      if (Array.isArray(couponsList)) {
+        matchedCoupon = couponsList.find((c: any) => {
+          const dbCode = (c.code || c.couponCode || "").trim().toUpperCase();
+          return dbCode === codeInput;
+        });
       }
 
       if (matchedCoupon) {
-        const codeUpper = matchedCoupon.code.toUpperCase();
+        const codeUpper = (matchedCoupon.code || matchedCoupon.couponCode || codeInput).toUpperCase();
         
-        // Extract exact numeric value from admin coupon
         const rawVal = 
+          matchedCoupon.discountValue ?? 
           matchedCoupon.discount ?? 
           matchedCoupon.value ?? 
           matchedCoupon.percentage ?? 
           matchedCoupon.amount ?? 
-          matchedCoupon.discountValue ?? 
           matchedCoupon.rate ?? 
           0;
 
         const val = Number(rawVal);
         
         const typeStr = String(
-          matchedCoupon.type ?? 
           matchedCoupon.discountType ?? 
-          (matchedCoupon.isFlat ? "FLAT" : "PERCENT")
+          matchedCoupon.type ?? 
+          "PERCENTAGE"
         ).toUpperCase();
 
-        const isExplicitShipping = typeStr.includes("SHIP") || codeUpper === "FREESHIP" || (codeUpper === "FREE" && val === 0);
-        const isFlat = typeStr.includes("FLAT") || typeStr.includes("FIXED") || matchedCoupon.isFlat === true;
-
-        let finalType: "PERCENT" | "FLAT" | "SHIPPING" = "PERCENT";
-        let finalVal = val;
-
-        if (isExplicitShipping) {
-          finalType = "SHIPPING";
-          finalVal = 0;
-          setCouponMsg(`🎉 Coupon '${codeUpper}' applied successfully! (Free Delivery)`);
-        } else if (isFlat) {
-          finalType = "FLAT";
-          finalVal = val > 0 ? val : 50;
-          setCouponMsg(`🎉 Coupon '${codeUpper}' applied successfully! (₹${finalVal} OFF)`);
-        } else {
-          finalType = "PERCENT";
-          finalVal = val > 0 ? val : 10;
-          setCouponMsg(`🎉 Coupon '${codeUpper}' applied successfully! (${finalVal}% OFF)`);
+        const minOrder = Number(matchedCoupon.minOrderValue || 0);
+        if (subtotal < minOrder) {
+          setCouponMsg(`❌ Minimum order value of ₹${minOrder} required for this coupon.`);
+          setCouponApplied(false);
+          setDiscountValue(0);
+          localStorage.removeItem("cb_applied_coupon");
+          return;
         }
 
-        setDiscountValue(finalVal);
+        let finalType: "PERCENT" | "FLAT" | "SHIPPING" = "PERCENT";
+        if (typeStr.includes("SHIP")) {
+          finalType = "SHIPPING";
+        } else if (typeStr.includes("FLAT") || typeStr.includes("FIXED") || typeStr.includes("AMOUNT")) {
+          finalType = "FLAT";
+        } else {
+          finalType = "PERCENT";
+        }
+
+        setDiscountValue(val);
         setDiscountType(finalType);
         setAppliedCouponName(codeUpper);
         setCouponApplied(true);
 
-        // SAVE COUPON TO LOCALSTORAGE SO CHECKOUT CAN ACCESS IT
+        if (finalType === "SHIPPING") {
+          setCouponMsg(`🎉 Coupon '${codeUpper}' applied successfully! (Free Delivery)`);
+        } else if (finalType === "FLAT") {
+          setCouponMsg(`🎉 Coupon '${codeUpper}' applied successfully! (₹${val} OFF)`);
+        } else {
+          setCouponMsg(`🎉 Coupon '${codeUpper}' applied successfully! (${val}% OFF)`);
+        }
+
         localStorage.setItem("cb_applied_coupon", JSON.stringify({
           code: codeUpper,
           type: finalType,
-          value: finalVal
+          value: val
         }));
 
       } else {
@@ -177,16 +187,13 @@ export default function CartPage() {
         localStorage.removeItem("cb_applied_coupon");
       }
     } catch (err) {
-      console.error(err);
-      setCouponMsg("❌ Error verifying coupon. Please try again.");
+      console.error("Coupon API fetch error:", err);
+      setCouponMsg("❌ Error verifying coupon with database. Please try again.");
     } finally {
       setValidatingCoupon(false);
     }
   };
 
-  // Calculations
-  const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  
   const isFreeShipping = couponApplied && discountType === "SHIPPING";
   const shipping = (subtotal > 0 && !isFreeShipping) ? 60 : 0;
   
@@ -203,9 +210,7 @@ export default function CartPage() {
 
   const handleProceedToCheckout = () => {
     if (cart.length === 0) return;
-
     const userSession = localStorage.getItem("cb_user") || localStorage.getItem("user");
-    
     if (!userSession) {
       router.push("/login?redirect=/checkout");
     } else {
@@ -244,7 +249,6 @@ export default function CartPage() {
         <h1 className="text-xl font-black text-slate-950">Shopping Cart ({cart.length} items)</h1>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left: Products List */}
           <div className="lg:col-span-7 space-y-3">
             {cart.map((item, index) => (
               <div
@@ -252,7 +256,7 @@ export default function CartPage() {
                 className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex items-center gap-4"
               >
                 <img
-                  src={item.image}
+                  src={item.image || "/logo.png"}
                   alt={item.title}
                   className="w-20 h-20 rounded-xl object-cover border border-slate-100 shrink-0"
                 />
@@ -275,7 +279,6 @@ export default function CartPage() {
                     )}
                   </div>
 
-                  {/* Quantity Controller (Strict Max 9 Limit) */}
                   <div className="flex items-center justify-between mt-3">
                     <div className="flex items-center border border-slate-200 rounded-xl bg-slate-50">
                       <button
@@ -307,12 +310,11 @@ export default function CartPage() {
             ))}
           </div>
 
-          {/* Right: Dynamic Admin Coupons & Order Summary */}
+          {/* Right: Coupon Section ("APPLY COUPON") */}
           <div className="lg:col-span-5 space-y-4">
-            {/* Coupon Section */}
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
               <label className="text-xs font-black text-slate-950 uppercase tracking-wider flex items-center gap-1.5">
-                <Tag className="w-4 h-4 text-emerald-600" /> Apply Admin Coupon
+                <Tag className="w-4 h-4 text-emerald-600" /> APPLY COUPON
               </label>
               <div className="flex gap-2">
                 <input
