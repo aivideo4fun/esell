@@ -16,20 +16,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Complete shipping address is required" }, { status: 400 });
     }
 
-    const fullAddressString = `${shippingAddress.street}, ${shippingAddress.city}, ${shippingAddress.state || "Rajasthan"} - ${shippingAddress.pincode}`;
+    const isCOD = (paymentMethod || "COD") === "COD";
+    const orderNumber = `CB-${Date.now().toString().slice(-8)}`;
+    const gatewayTxnId = `TXN_${Date.now()}`;
 
-    // Create Order in Database via Prisma handling Address relation correctly
     const newOrder = await prisma.order.create({
       data: {
-        name: shippingAddress.fullName,
-        phone: shippingAddress.phone,
-        paymentMethod: paymentMethod || "COD",
-        paymentStatus: paymentMethod === "COD" ? "PENDING" : "PAID",
-        status: "PLACED",
+        orderNumber,
         totalAmount: Number(totalAmount || 0),
-        discount: Number(discount || 0),
+        discountAmount: Number(discount || 0),
         couponCode: couponCode || null,
-        // Handling address as a relation or creating it inline based on Prisma schema relation
+        orderStatus: "PROCESSING",
+        paymentStatus: isCOD ? "PENDING" : "SUCCESS",
+
         address: {
           create: {
             fullName: shippingAddress.fullName,
@@ -38,18 +37,32 @@ export async function POST(req: Request) {
             city: shippingAddress.city || "",
             state: shippingAddress.state || "Rajasthan",
             pincode: shippingAddress.pincode || "",
-            address: fullAddressString,
           },
         },
+
         items: {
           create: items.map((item: any) => ({
-            productId: item.productId || item.id || "unknown",
-            title: item.title || "Product",
-            price: Number(item.price || 0),
+            productId: item.productId || item.id,
             quantity: Number(item.quantity || 1),
-            image: item.image || "/logo.png",
+            price: Number(item.price || 0),
+            selectedSize: item.selectedSize || null,
+            selectedColor: item.selectedColor || null,
           })),
         },
+
+        payments: {
+          create: {
+            gateway: isCOD ? "COD" : "RAZORPAY",
+            gatewayTxnId,
+            amount: Number(totalAmount || 0),
+            status: isCOD ? "PENDING" : "COMPLETED",
+          },
+        },
+      },
+      include: {
+        items: true,
+        address: true,
+        payments: true,
       },
     });
 
@@ -57,6 +70,7 @@ export async function POST(req: Request) {
       success: true,
       message: "Order placed successfully!",
       orderId: newOrder.id,
+      orderNumber: newOrder.orderNumber,
     });
   } catch (error: any) {
     console.error("Place Order API Error:", error);

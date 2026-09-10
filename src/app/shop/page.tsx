@@ -64,6 +64,16 @@ function ShopContent() {
 
   const { wishlist, toggleWishlist } = useWishlist();
 
+  // Helper to safely extract image string URL
+  const getProductImageString = (product: Product): string => {
+    const raw = product.images?.[0]?.url || product.images?.[0] || product.image || "/logo.png";
+    if (typeof raw === "string" && raw.trim() !== "") return raw;
+    if (typeof raw === "object" && raw !== null && "url" in raw && typeof (raw as any).url === "string") {
+      return (raw as any).url;
+    }
+    return "/logo.png";
+  };
+
   useEffect(() => {
     const updateCartMap = () => {
       try {
@@ -165,7 +175,7 @@ function ShopContent() {
       const currentQty = index > -1 ? (cart[index].quantity || 1) : 0;
       const newQty = currentQty + delta;
 
-      const imgUrl = product.images?.[0]?.url || product.images?.[0] || product.image || "/logo.png";
+      const imgUrl = getProductImageString(product);
       const effOrigPrice = product.originalPrice && product.originalPrice > product.price ? product.originalPrice : Math.round(product.price * 1.35);
 
       if (newQty > 0) {
@@ -216,7 +226,7 @@ function ShopContent() {
   const handleWishlistToggle = (product: Product, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const imgUrl = product.images?.[0]?.url || product.images?.[0] || product.image || "/logo.png";
+    const imgUrl = getProductImageString(product);
     toggleWishlist({
       id: product.id,
       title: product.title,
@@ -325,13 +335,7 @@ function ShopContent() {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
             {filteredProducts.map((product) => {
-              // STRICT FALLBACK TO /logo.png
-              const imgUrl =
-                product.images?.[0]?.url ||
-                product.images?.[0] ||
-                product.image ||
-                "/logo.png";
-
+              const imgUrl = getProductImageString(product);
               const isWishlisted = wishlist.some((w) => w.id === product.id);
               const isOutOfStock = (product.stock ?? 1) <= 0;
               const qty = cartQuantities[product.id] || 0;
