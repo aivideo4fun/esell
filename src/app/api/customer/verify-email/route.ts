@@ -9,18 +9,15 @@ export async function POST(req: Request) {
     const { action, email, phone, otp } = body;
 
     const cleanEmail = (email || "").trim().toLowerCase();
-    const cleanPhone = (phone || "").replace(/\D/g, "").slice(-10);
 
     if (action === "SEND_OTP") {
       if (!cleanEmail) {
         return NextResponse.json({ success: false, error: "Email address is required" }, { status: 400 });
       }
 
-      // Generate 6-digit OTP
       const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
       console.log(`[Account Email OTP] Sending OTP ${generatedOtp} to ${cleanEmail}`);
 
-      // Send via Brevo API
       const apiKey = process.env.BREVO_API_KEY;
       const senderEmail = process.env.BREVO_SENDER_EMAIL || "support@catchbuddy.in";
 
@@ -68,12 +65,11 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: false, error: "Invalid verification code. Please try again." }, { status: 400 });
       }
 
-      // Permanently lock/update user in database if email exists
       if (cleanEmail) {
         try {
           await prisma.user.updateMany({
             where: { email: cleanEmail },
-            data: { emailVerified: new Date() }, // Standard Prisma field or use custom status
+            data: {}, 
           });
         } catch (dbErr) {
           console.error("Database user verification update warning:", dbErr);
@@ -82,7 +78,7 @@ export async function POST(req: Request) {
 
       return NextResponse.json({
         success: true,
-        message: "Email verified and permanently locked!",
+        message: "Email verified successfully!",
       });
     }
 
