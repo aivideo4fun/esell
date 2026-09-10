@@ -68,10 +68,11 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
         if (data.success && data.product) {
           const p = data.product;
           setProduct(p);
+          // Fallback to CatchBuddy logo (/logo.png) if no image exists
           setSelectedImg(
             p.images?.[0]?.url ||
               p.images?.[0] ||
-              "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=600&q=80"
+              "/logo.png"
           );
 
           const savedCart = JSON.parse(localStorage.getItem("cb_cart") || "[]");
