@@ -103,7 +103,7 @@ export default function AdminSeoPage() {
             required
             rows={3}
             value={seoConfig.metaDescription}
-            onChange={(e) => setseoConfig({ ...seoConfig, metaDescription: e.target.value })}
+            onChange={(e) => setSeoConfig({ ...seoConfig, metaDescription: e.target.value })}
             className="w-full border border-slate-200 rounded-xl px-3.5 py-2 font-semibold outline-none focus:border-emerald-500"
           />
         </div>
