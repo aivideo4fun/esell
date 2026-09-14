@@ -181,7 +181,6 @@ export default function CustomerAccountPage() {
             const allNotifs = dataNotif.notifications || [];
             setNotifications(allNotifs);
 
-            // Check read status from localStorage
             const lastReadId = localStorage.getItem("cb_last_read_notification");
             if (allNotifs.length > 0) {
               if (!lastReadId) {
@@ -215,7 +214,6 @@ export default function CustomerAccountPage() {
     void loadAllCustomerData();
   }, [router]);
 
-  // When user clicks Notifications tab, mark all as read and remove badge
   const handleTabSwitch = (tabId: string, link?: string) => {
     if (tabId === "orders" || tabId === "track") {
       router.push("/orders");
@@ -568,7 +566,7 @@ export default function CustomerAccountPage() {
                       <label className="text-xs font-bold text-slate-700">Email Address</label>
                       {profileData.isEmailVerified ? (
                         <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md flex items-center gap-1">
-                          <Lock className="w-3 h-3" /> Verified
+                          <Lock className="w-3 h-3" /> Verified & Locked
                         </span>
                       ) : (
                         <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
@@ -894,7 +892,6 @@ export default function CustomerAccountPage() {
                     </p>
                   </div>
 
-                  {/* Render Admin Broadcast Notifications */}
                   {notifications.map((n) => (
                     <div key={n.id} className="p-4 border border-emerald-200 rounded-2xl text-xs space-y-1 bg-emerald-50/50">
                       <div className="flex items-center justify-between">

@@ -106,7 +106,12 @@ export default function CheckoutPage() {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          setCart(parsed);
+          // Ensure every cart item uses real image or /logo.png (No Unsplash placeholders)
+          const cleanedItems = parsed.map((item: any) => ({
+            ...item,
+            image: item.image && !item.image.includes("unsplash.com") ? item.image : "/logo.png",
+          }));
+          setCart(cleanedItems);
         } else {
           router.push("/cart");
         }
@@ -298,15 +303,12 @@ export default function CheckoutPage() {
 
     setIsVerifyingCod(true);
     try {
-      // Support universal test code '123456' or Firebase confirmation
-      if (codOtp !== "123456") {
-        if (!confirmationResult) {
-          alert("Session expired. Please resend OTP.");
-          setIsVerifyingCod(false);
-          return;
-        }
-        await confirmationResult.confirm(codOtp);
+      if (!confirmationResult) {
+        alert("Session expired. Please resend OTP.");
+        setIsVerifyingCod(false);
+        return;
       }
+      await confirmationResult.confirm(codOtp);
 
       const res = await fetch("/api/orders/place", {
         method: "POST",
@@ -331,7 +333,7 @@ export default function CheckoutPage() {
       }
     } catch (err: any) {
       console.error("OTP Verification Error:", err);
-      alert("Invalid verification code. (Testing ke liye aap '123456' use kar sakte hain).");
+      alert("Invalid verification code. Please check and try again.");
     } finally {
       setIsVerifyingCod(false);
       setShowCodModal(false);
@@ -495,16 +497,19 @@ export default function CheckoutPage() {
               </h3>
 
               <div className="max-h-60 overflow-y-auto space-y-3 pr-1">
-                {cart.map((item, idx) => (
-                  <div key={idx} className="flex items-center gap-3 text-xs">
-                    <img src={item.image || "/logo.png"} alt="" className="w-12 h-12 rounded-xl object-cover border border-slate-100 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-bold text-slate-900 truncate">{item.title}</p>
-                      <p className="text-[10px] text-slate-500">Qty: {item.quantity}</p>
+                {cart.map((item, idx) => {
+                  const imageUrl = item.image && !item.image.includes("unsplash.com") ? item.image : "/logo.png";
+                  return (
+                    <div key={idx} className="flex items-center gap-3 text-xs">
+                      <img src={imageUrl} alt="" className="w-12 h-12 rounded-xl object-contain bg-slate-50 border border-slate-100 shrink-0 p-1" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-slate-900 truncate">{item.title}</p>
+                        <p className="text-[10px] text-slate-500">Qty: {item.quantity}</p>
+                      </div>
+                      <span className="font-black text-slate-950">₹{item.price * item.quantity}</span>
                     </div>
-                    <span className="font-black text-slate-950">₹{item.price * item.quantity}</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               <div className="space-y-2 text-xs font-bold text-slate-600 pt-3 border-t border-slate-100">
@@ -549,7 +554,7 @@ export default function CheckoutPage() {
             </div>
             <h3 className="text-lg font-black text-slate-950">OTP Verification</h3>
             <p className="text-xs text-slate-500">
-              OTP sent successfully to your mobile number <b>{registeredPhone || formData.phone}</b>. (Test Code: 123456)
+              Enter the 6-digit verification code sent via SMS to your mobile number <b>{registeredPhone || formData.phone}</b>.
             </p>
 
             <input

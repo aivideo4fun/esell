@@ -32,7 +32,7 @@ export async function GET(
       },
       include: {
         user: true,
-        address: true, // shippingAddress ki jagah address use karein
+        address: true,
         payments: true,
         items: {
           include: {
