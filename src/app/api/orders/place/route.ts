@@ -35,6 +35,20 @@ export async function POST(req: Request) {
       }
     }
 
+    // 1. Pehle Address create karein taaki addressId mil sake (TypeScript relation error fix karne ke liye)
+    const createdAddress = await prisma.address.create({
+      data: {
+        fullName: shippingAddress.fullName,
+        phone: shippingAddress.phone,
+        street: shippingAddress.street,
+        city: shippingAddress.city || "",
+        state: shippingAddress.state || "Rajasthan",
+        pincode: shippingAddress.pincode || "",
+        userId: dbUserId,
+      },
+    });
+
+    // 2. Ab Order create karein addressId ke sath
     const newOrder = await prisma.order.create({
       data: {
         orderNumber,
@@ -44,17 +58,7 @@ export async function POST(req: Request) {
         orderStatus: "PROCESSING",
         paymentStatus: isCOD ? "PENDING" : "SUCCESS",
         userId: dbUserId, // Linking user so /orders page can fetch it instantly
-
-        address: {
-          create: {
-            fullName: shippingAddress.fullName,
-            phone: shippingAddress.phone,
-            street: shippingAddress.street,
-            city: shippingAddress.city || "",
-            state: shippingAddress.state || "Rajasthan",
-            pincode: shippingAddress.pincode || "",
-          },
-        },
+        addressId: createdAddress.id, // Using foreign key relation correctly
 
         items: {
           create: items.map((item: any) => ({
