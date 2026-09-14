@@ -22,6 +22,7 @@ export async function GET(req: Request) {
             { id: orderIdParam },
             { orderNumber: orderIdParam },
             { orderNumber: `CB-${orderIdParam}` },
+            { orderNumber: orderIdParam.replace(/^CB-/i, "") },
           ],
           ...(customerId ? { userId: customerId } : {}),
         },
@@ -66,7 +67,7 @@ export async function GET(req: Request) {
   }
 }
 
-// 2. POST: Order Placement (Strict Security - No unauthenticated orders allowed)
+// 2. POST: Order Placement (Robust & Auto-User Resolution)
 export async function POST(req: Request) {
   try {
     const cookieStore = await cookies();
@@ -75,26 +76,37 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { userId, items, customerDetails, paymentMethod, paymentId, totalAmount } = body;
 
-    // Strict Security Check: Request ke sath valid logged-in user ki ID ya cookie honi hi chahiye
-    const activeUserId = customerIdCookie || userId;
+    const cust = customerDetails || {};
+    const rawPhone = cust.phone?.toString().trim() || "";
+    const cleanPhone = rawPhone.replace(/\D/g, "").slice(-10);
+    const custName = cust.fullName?.trim() || "CatchBuddy Shopper";
+    const custEmail = cust.email?.trim().toLowerCase() || "";
 
-    if (!activeUserId) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized! Please login to your account to place an order." },
-        { status: 401 }
-      );
+    // Resolve or Auto-Create User to prevent unauthenticated checkout blocks
+    let activeUserId = customerIdCookie || userId;
+    let targetUser = null;
+
+    if (activeUserId) {
+      targetUser = await prisma.user.findUnique({ where: { id: activeUserId } });
     }
 
-    // Verify karein ki user database mein real mein exist karta hai ya nahi
-    const existingUser = await prisma.user.findUnique({
-      where: { id: activeUserId },
-    });
+    if (!targetUser && custEmail) {
+      targetUser = await prisma.user.findUnique({ where: { email: custEmail } });
+    }
 
-    if (!existingUser) {
-      return NextResponse.json(
-        { success: false, error: "Invalid user session. Please login again." },
-        { status: 401 }
-      );
+    if (!targetUser && cleanPhone) {
+      targetUser = await prisma.user.findFirst({ where: { phone: cleanPhone } });
+    }
+
+    // Agar user database mein nahi mila, toh guest/new user create kar do taaki order kabhi fail na ho
+    if (!targetUser) {
+      targetUser = await prisma.user.create({
+        data: {
+          email: custEmail || `user_${Date.now()}@catchbuddy.in`,
+          phone: cleanPhone || "9999999999",
+          name: custName,
+        },
+      });
     }
 
     if (!items || !Array.isArray(items) || items.length === 0) {
@@ -104,13 +116,9 @@ export async function POST(req: Request) {
       );
     }
 
-    const cust = customerDetails || {};
-    const rawPhone = cust.phone?.toString().trim() || existingUser.phone || "";
-    const cleanPhone = rawPhone.replace(/\D/g, "").slice(-10);
-    const custName = cust.fullName?.trim() || existingUser.name || "CatchBuddy Shopper";
-    const custEmail = cust.email?.trim() || existingUser.email || "";
-
-    const orderNumber = `CB-${Date.now().toString().slice(-6)}`;
+    // Clean 8-digit unique order number e.g. CB-849201
+    const random8 = Math.floor(10000000 + Math.random() * 90000000).toString();
+    const orderNumber = `CB-${random8}`;
     const parsedAmount = parseFloat(totalAmount) || 0;
     const isCOD = paymentMethod === "COD";
 
@@ -132,10 +140,10 @@ export async function POST(req: Request) {
             fullName: custName,
             phone: cleanPhone || "0000000000",
             street: cust.street || "Local Delivery",
-            city: cust.city || "Jaipur",
+            city: cust.city || "Parbatsar",
             state: cust.state || "Rajasthan",
-            pincode: cust.pincode || "302020",
-            userId: existingUser.id,
+            pincode: cust.pincode || "341512",
+            userId: targetUser.id,
           },
         });
 
@@ -146,7 +154,7 @@ export async function POST(req: Request) {
             paymentStatus: isCOD ? "PENDING" : "SUCCESS",
             orderStatus: "PROCESSING",
             addressId: createdAddress.id,
-            userId: existingUser.id,
+            userId: targetUser.id,
             payments: {
               create: {
                 gateway: isCOD ? "COD" : "RAZORPAY",
@@ -242,7 +250,7 @@ export async function POST(req: Request) {
       orderNumber: newOrder.orderNumber,
     });
 
-    response.cookies.set("customer_id", existingUser.id, {
+    response.cookies.set("customer_id", targetUser.id, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
