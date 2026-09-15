@@ -6,11 +6,13 @@ import { sendBrevoEmail } from "@/lib/brevo";
 
 export const dynamic = "force-dynamic";
 
-// 1. GET: Fetch Customer Orders (Strict User Isolation)
+// 1. GET: Fetch Customer Orders (Strict User Isolation + Email/Phone Fallback)
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const orderIdParam = searchParams.get("orderId");
+    const queryEmail = searchParams.get("email");
+    const queryPhone = searchParams.get("phone");
 
     const cookieStore = await cookies();
     const customerId = cookieStore.get("customer_id")?.value;
@@ -42,12 +44,29 @@ export async function GET(req: Request) {
       }
     }
 
-    if (!customerId) {
+    let whereCondition: any = {};
+    if (customerId) {
+      whereCondition.userId = customerId;
+    } else if (queryEmail || queryPhone) {
+      const matchedUser = await prisma.user.findFirst({
+        where: {
+          OR: [
+            ...(queryEmail ? [{ email: queryEmail.trim().toLowerCase() }] : []),
+            ...(queryPhone ? [{ phone: queryPhone.replace(/\D/g, "").slice(-10) }] : []),
+          ],
+        },
+      });
+      if (matchedUser) {
+        whereCondition.userId = matchedUser.id;
+      } else {
+        return NextResponse.json({ success: true, orders: [] });
+      }
+    } else {
       return NextResponse.json({ success: true, orders: [] });
     }
 
     const orders = await prisma.order.findMany({
-      where: { userId: customerId },
+      where: whereCondition,
       include: {
         address: true,
         payments: true,
@@ -67,7 +86,7 @@ export async function GET(req: Request) {
   }
 }
 
-// 2. POST: Order Placement (Robust & Auto-User Resolution)
+// 2. POST: Order Placement (Robust & Auto-User Resolution + 8-Digit Order Number)
 export async function POST(req: Request) {
   try {
     const cookieStore = await cookies();
@@ -98,7 +117,6 @@ export async function POST(req: Request) {
       targetUser = await prisma.user.findFirst({ where: { phone: cleanPhone } });
     }
 
-    // Agar user database mein nahi mila, toh guest/new user create kar do taaki order kabhi fail na ho
     if (!targetUser) {
       targetUser = await prisma.user.create({
         data: {
@@ -116,7 +134,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // Clean 8-digit unique order number e.g. CB-849201
+    // Clean 8-digit unique order number e.g. CB-84920184
     const random8 = Math.floor(10000000 + Math.random() * 90000000).toString();
     const orderNumber = `CB-${random8}`;
     const parsedAmount = parseFloat(totalAmount) || 0;

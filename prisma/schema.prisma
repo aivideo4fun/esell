@@ -10,22 +10,23 @@ generator client {
 
 // 1. Users (Admin, Staff, Customers)
 model User {
-  id        String   @id @default(cuid())
-  name      String?
-  email     String   @unique
-  phone     String?  @unique
-  password  String?
-  role      String   @default("CUSTOMER") // CUSTOMER, ADMIN, STAFF
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String        @id @default(cuid())
+  name            String?
+  email           String        @unique
+  phone           String?       @unique
+  password        String?
+  role            String        @default("CUSTOMER") // CUSTOMER, ADMIN, STAFF
+  isActive        Boolean       @default(true)
+  isEmailVerified Boolean       @default(false)      // <--- User table mein email verification sync ke liye add kiya gaya hai
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
-  addresses    Address[]
-  orders       Order[]
-  reviews      Review[]
-  wishlists    Wishlist[]
-  activityLogs ActivityLog[]
-  tickets      SupportTicket[]
+  addresses     Address[]
+  orders        Order[]
+  reviews       Review[]
+  wishlists     Wishlist[]
+  activityLogs  ActivityLog[]
+  tickets       SupportTicket[]
 }
 
 // 2. Customers (Fast OTP / WhatsApp Checkout)
@@ -34,7 +35,7 @@ model Customer {
   phone           String?  @unique
   email           String?  @unique
   name            String?
-  isEmailVerified Boolean  @default(false)   // <--- Ise yahan add kiya gaya hai
+  isEmailVerified Boolean  @default(false)   // <--- Ise yahan add kiya gaya tha
   isBlocked       Boolean  @default(false)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -52,6 +53,7 @@ model VerificationOtp {
 
   @@index([identifier])
 }
+
 // 4. Categories & Subcategories
 model Category {
   id            String     @id @default(cuid())
@@ -99,8 +101,8 @@ model Product {
   orderItems OrderItem[]
   reviews    Review[]
   wishlists  Wishlist[]
-  createdAt  DateTime       @default(now())
-  updatedAt  DateTime       @updatedAt
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
 
   @@index([categoryId])
   @@index([slug])
@@ -155,10 +157,10 @@ model Order {
   trackingUrl    String?
   channel        String    @default("WEBSITE")
 
-  items          OrderItem[]
-  payments       Payment[]
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  items     OrderItem[]
+  payments  Payment[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
 
   @@index([orderStatus])
   @@index([createdAt])
@@ -236,15 +238,15 @@ model Coupon {
 
 // 14. Banners & Homepage Sliders (CMS)
 model Banner {
-  id          String   @id @default(cuid())
-  title       String
-  subtitle    String?
-  imageUrl    String
-  linkUrl     String?
-  badgeText   String?
-  isActive    Boolean  @default(true)
-  displayOrder Int     @default(0)
-  createdAt   DateTime @default(now())
+  id           String   @id @default(cuid())
+  title        String
+  subtitle     String?
+  imageUrl     String
+  linkUrl      String?
+  badgeText    String?
+  isActive     Boolean  @default(true)
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
 }
 
 // 15. Customer Support Tickets
@@ -318,3 +320,11 @@ model SupplierPayout {
   updatedAt        DateTime @updatedAt
 }
 
+// 20. all customer notification 
+model Notification {
+  id        String   @id @default(cuid())
+  title     String
+  message   String
+  isGlobal  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}

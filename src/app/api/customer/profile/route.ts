@@ -6,82 +6,81 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const phone = searchParams.get("phone");
     const email = searchParams.get("email");
+    const phone = searchParams.get("phone");
 
-    let user = null;
-
-    if (phone || email) {
-      user = await prisma.user.findFirst({
-        where: {
-          OR: [
-            ...(phone ? [{ phone: phone.replace(/\D/g, "").slice(-10) }] : []),
-            ...(email ? [{ email }] : []),
-          ],
-        },
-      });
+    if (!email && !phone) {
+      return NextResponse.json({ success: false, error: "Identifier required" }, { status: 400 });
     }
 
-    if (!user) {
-      return NextResponse.json({ success: false, message: "User not found" }, { status: 404 });
+    const customer = await prisma.user.findFirst({
+      where: {
+        OR: [
+          ...(email ? [{ email: email.trim().toLowerCase() }] : []),
+          ...(phone ? [{ phone: phone.replace(/\D/g, "").slice(-10) }] : []),
+        ],
+      },
+    });
+
+    if (!customer) {
+      return NextResponse.json({ success: false, error: "Customer not found" }, { status: 404 });
     }
 
     return NextResponse.json({
       success: true,
       customer: {
-        id: user.id,
-        name: user.name,
-        email: user.email?.includes("@catchbuddy.store") ? "" : user.email,
-        phone: user.phone,
+        id: customer.id,
+        name: customer.name || "Customer",
+        email: customer.email || "",
+        phone: customer.phone || "",
+        isEmailVerified: !!(customer as any).isEmailVerified,
       },
     });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (err: any) {
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
 
 export async function PUT(req: Request) {
   try {
     const body = await req.json();
-    const { name, phone, email } = body;
+    const { name, phone, email, isEmailVerified } = body;
 
-    if (!phone) {
-      return NextResponse.json({ success: false, error: "Phone number required" }, { status: 400 });
-    }
+    const cleanEmail = (email || "").trim().toLowerCase();
+    const cleanPhone = (phone || "").replace(/\D/g, "").slice(-10);
 
-    const cleanPhone = phone.replace(/\D/g, "").slice(-10);
-
-    const updatedUser = await prisma.user.updateMany({
+    const existingUser = await prisma.user.findFirst({
       where: {
         OR: [
-          { phone: cleanPhone },
-          { phone: `0${cleanPhone}` },
+          ...(cleanEmail ? [{ email: cleanEmail }] : []),
+          ...(cleanPhone ? [{ phone: cleanPhone }] : []),
         ],
-      },
-      data: {
-        name: name?.trim() || undefined,
-        ...(email && email.trim() && !email.includes("@catchbuddy.store")
-          ? { email: email.trim().toLowerCase() }
-          : {}),
       },
     });
 
-    if (email && email.trim()) {
-      await prisma.customer.updateMany({
-        where: { phone: cleanPhone },
+    let updatedUser;
+    if (existingUser) {
+      updatedUser = await prisma.user.update({
+        where: { id: existingUser.id },
         data: {
-          name: name?.trim() || undefined,
-          email: email.trim().toLowerCase(),
+          name: name || existingUser.name,
+          phone: cleanPhone || existingUser.phone,
+          ...(typeof isEmailVerified === "boolean" ? { isEmailVerified } : {}),
+        },
+      });
+    } else {
+      updatedUser = await prisma.user.create({
+        data: {
+          email: cleanEmail || `user_${Date.now()}@catchbuddy.in`,
+          phone: cleanPhone || "9999999999",
+          name: name || "Customer",
+          isEmailVerified: !!isEmailVerified,
         },
       });
     }
 
-    return NextResponse.json({
-      success: true,
-      message: "Profile updated successfully",
-      customer: { name, phone: cleanPhone, email },
-    });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: true, customer: updatedUser });
+  } catch (err: any) {
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
