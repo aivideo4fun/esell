@@ -106,7 +106,6 @@ export default function CheckoutPage() {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // Ensure every cart item uses real image or /logo.png (No Unsplash placeholders)
           const cleanedItems = parsed.map((item: any) => ({
             ...item,
             image: item.image && !item.image.includes("unsplash.com") ? item.image : "/logo.png",
@@ -161,6 +160,10 @@ export default function CheckoutPage() {
 
   const totalPayable = Math.max(0, subtotal + shipping - discountAmount);
 
+  // Strictly use account/registered email for communications, avoiding address-form override leaking wrong email
+  const finalCustomerEmail = registeredEmail || "";
+  const finalCustomerPhone = registeredPhone || formData.phone;
+
   const setupRecaptchaAndSendOtp = async () => {
     if (!auth) {
       alert("Firebase Auth is not initialized.");
@@ -212,8 +215,8 @@ export default function CheckoutPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formData,
-          userEmail: registeredEmail,
-          userPhone: registeredPhone,
+          userEmail: finalCustomerEmail,
+          userPhone: finalCustomerPhone,
         }),
       });
     } catch {}
@@ -237,6 +240,8 @@ export default function CheckoutPage() {
           shippingAddress: formData,
           discount: discountAmount,
           couponCode: couponName,
+          customerEmail: finalCustomerEmail,
+          customerPhone: finalCustomerPhone,
         }),
       });
       const orderData = await res.json();
@@ -265,6 +270,8 @@ export default function CheckoutPage() {
               totalAmount: totalPayable,
               discount: discountAmount,
               couponCode: couponName,
+              customerEmail: finalCustomerEmail,
+              customerPhone: finalCustomerPhone,
             }),
           });
           const verifyData = await verifyRes.json();
@@ -272,14 +279,15 @@ export default function CheckoutPage() {
             localStorage.removeItem("cb_cart");
             localStorage.removeItem("cb_applied_coupon");
             window.dispatchEvent(new Event("storage"));
-            router.push(`/order-success?orderId=${verifyData.orderId}`);
+            router.push(`/order-success?orderId=${verifyData.orderNumber || verifyData.orderId}`);
           } else {
             alert("Payment verification failed.");
           }
         },
         prefill: {
           name: formData.fullName,
-          contact: formData.phone,
+          contact: finalCustomerPhone,
+          email: finalCustomerEmail,
         },
         theme: {
           color: "#16a34a",
@@ -320,6 +328,8 @@ export default function CheckoutPage() {
           totalAmount: totalPayable,
           discount: discountAmount,
           couponCode: couponName,
+          customerEmail: finalCustomerEmail,
+          customerPhone: finalCustomerPhone,
         }),
       });
       const data = await res.json();
@@ -327,7 +337,7 @@ export default function CheckoutPage() {
         localStorage.removeItem("cb_cart");
         localStorage.removeItem("cb_applied_coupon");
         window.dispatchEvent(new Event("storage"));
-        router.push(`/order-success?orderId=${data.orderId}`);
+        router.push(`/order-success?orderId=${data.orderNumber || data.orderId}`);
       } else {
         alert("Order error: " + (data.error || "Unknown"));
       }
@@ -554,7 +564,7 @@ export default function CheckoutPage() {
             </div>
             <h3 className="text-lg font-black text-slate-950">OTP Verification</h3>
             <p className="text-xs text-slate-500">
-              Enter the 6-digit verification code sent via SMS to your mobile number <b>{registeredPhone || formData.phone}</b>.
+              Enter the 6-digit verification code sent via SMS to your mobile number <b>{finalCustomerPhone}</b>.
             </p>
 
             <input
