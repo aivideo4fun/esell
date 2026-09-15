@@ -17,7 +17,7 @@ export async function POST(req: Request) {
     if (action === "SEND_OTP") {
       const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
       // Store in memory/db or send via Brevo
-      const apiKey = process.id ? undefined : process.env.BREVO_API_KEY;
+      const apiKey = process.env.BREVO_API_KEY;
       const senderEmail = process.env.BREVO_SENDER_EMAIL || "support@catchbuddy.in";
 
       // Temporary global storage fallback for OTP verification testing if redis/db store isn't set
