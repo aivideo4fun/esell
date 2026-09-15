@@ -4,6 +4,7 @@ import "./globals.css";
 import Script from "next/script";
 import Footer from "@/components/footer/Footer";
 import BottomNav from "@/components/BottomNav";
+import { BackButtonHandler } from "@/components/BackButtonHandler";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -20,7 +21,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.className} min-h-screen flex flex-col bg-[#fafafa]`} suppressHydrationWarning={true}>
+      <body
+        className={`${inter.className} min-h-screen flex flex-col bg-[#fafafa]`}
+        suppressHydrationWarning={true}
+      >
+        <BackButtonHandler />
+
         <main className="flex-1">{children}</main>
 
         {/* Global Policy, FAQs & Support Footer */}
