@@ -191,7 +191,7 @@ export default function AdminProductsPage() {
       if (data.success) {
         setProducts((prev) => prev.filter((p) => !selectedIds.includes(p.id)));
         setSelectedIds([]);
-        alert(data.message || "Selected products deleted!");
+        alert(data.message || "Selected products archived!");
       } else {
         alert("Bulk delete failed: " + (data.error || "Unknown error"));
       }
@@ -302,7 +302,7 @@ export default function AdminProductsPage() {
 
   // Delete Single Product
   const handleDelete = async (id: string) => {
-    if (!confirm("Kya aap is product ko delete karna chahte hain?")) return;
+    if (!confirm("Archive this product from the storefront? Existing orders will be preserved.")) return;
     try {
       const res = await fetch(`/api/admin/products?id=${id}`, { method: "DELETE" });
       const data = await res.json();

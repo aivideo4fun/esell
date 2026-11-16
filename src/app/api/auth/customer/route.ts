@@ -1,132 +1,60 @@
+import { rateLimit } from "@/lib/security/rate-limit";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
+import { issueSession, sessionCookieOptions } from "@/lib/security/session";
+import { verifyPhoneProof } from "@/lib/security/firebase";
+import { getCustomerId, issueCustomerSession } from "@/lib/security/customer";
 
+export async function GET() {
+  const id = await getCustomerId();
+  const user = id ? await prisma.user.findUnique({ where: { id }, select: { id: true, name: true, email: true, phone: true } }) : null;
+  return NextResponse.json({ success: !!user, authenticated: !!user, user }, { status: user ? 200 : 401 });
+}
+export async function DELETE() {
+  const response = NextResponse.json({ success: true });
+  response.cookies.delete("customer_session"); response.cookies.delete("customer_id");
+  return response;
+}
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { action, identifier, password, name, email, mobile, newPassword } = body;
-
-    // 1. LOGIN ACTION (Strict Password Check)
+    if (!(await rateLimit("customer-auth", String(body.identifier || body.email || body.mobile || "unknown"), 12))) return NextResponse.json({ success: false, error: "Too many attempts. Please wait 10 minutes." }, { status: 429 });
+    const { action, identifier, password, name, email, mobile, newPassword, idToken } = body;
     if (action === "LOGIN") {
-      if (!identifier || !password) {
-        return NextResponse.json({ success: false, error: "Please provide email/mobile and password" }, { status: 400 });
-      }
-
-      const cleanInput = identifier.trim();
-      const cleanPhone = cleanInput.replace(/\D/g, "").slice(-10);
-
-      const user = await prisma.user.findFirst({
-        where: {
-          OR: [
-            { email: cleanInput.toLowerCase() },
-            { phone: cleanInput },
-            { phone: cleanPhone },
-          ],
-        },
-      });
-
-      if (!user || !user.password) {
-        return NextResponse.json({ success: false, error: "Invalid Email/Mobile or Password" }, { status: 401 });
-      }
-
-      const isPasswordValid = await bcrypt.compare(password, user.password);
-      if (!isPasswordValid) {
-        return NextResponse.json({ success: false, error: "Incorrect password. Please try again." }, { status: 401 });
-      }
-
-      const response = NextResponse.json({
-        success: true,
-        message: "Login successful",
-        user: { id: user.id, name: user.name, phone: user.phone, email: user.email },
-      });
-
-      response.cookies.set("customer_id", user.id, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 60 * 60 * 24 * 365,
-      });
-
+      if (typeof identifier !== "string" || typeof password !== "string" || password.length > 200) return NextResponse.json({ success: false, error: "Enter valid credentials" }, { status: 400 });
+      const input = identifier.trim().toLowerCase();
+      const phone = input.replace(/\D/g, "").slice(-10);
+      const user = await prisma.user.findFirst({ where: { OR: [{ email: input }, ...(/^\d{10}$/.test(phone) ? [{ phone }] : [])] } });
+      if (!user?.isActive || !user.password || !(await bcrypt.compare(password, user.password))) return NextResponse.json({ success: false, error: "Invalid credentials" }, { status: 401 });
+      const response = NextResponse.json({ success: true, user: { id: user.id, name: user.name, email: user.email, phone: user.phone } });
+      response.cookies.set("customer_session", await issueCustomerSession(user), { ...sessionCookieOptions, maxAge: 7 * 86400 });
+      response.cookies.delete("customer_id");
       return response;
     }
-
-    // 2. REGISTER AFTER FIREBASE VERIFICATION
-    if (action === "REGISTER_VERIFIED") {
-      if (!mobile || !password || !name) {
-        return NextResponse.json({ success: false, error: "All fields are required" }, { status: 400 });
+    if (action === "CHECK_FORGOT_USER") return NextResponse.json({ success: true, message: "Verify your phone to continue" });
+    if (!["REGISTER_VERIFIED", "RESET_PASSWORD_VERIFIED", "OTP_LOGIN"].includes(action)) return NextResponse.json({ success: false, error: "Invalid action" }, { status: 400 });
+    const phone = typeof mobile === "string" ? mobile.replace(/\D/g, "").slice(-10) : "";
+    if (!/^[6-9]\d{9}$/.test(phone)) return NextResponse.json({ success: false, error: "Valid mobile number required" }, { status: 400 });
+    try { await verifyPhoneProof(idToken, phone); }
+    catch { return NextResponse.json({ success: false, error: "Complete SMS verification again" }, { status: 403 }); }
+    if (action !== "OTP_LOGIN") {
+      const value = action === "REGISTER_VERIFIED" ? password : newPassword;
+      if (typeof value !== "string" || value.length < 8 || value.length > 128) return NextResponse.json({ success: false, error: "Use a password of 8–128 characters" }, { status: 400 });
+      if (action === "RESET_PASSWORD_VERIFIED") {
+        await prisma.user.updateMany({ where: { phone, isActive: true }, data: { password: await bcrypt.hash(value, 12) } });
+        return NextResponse.json({ success: true, message: "Password updated. Please sign in." });
       }
-
-      const cleanMobile = mobile.replace(/\D/g, "").slice(-10);
-      const existingUser = await prisma.user.findFirst({
-        where: { OR: [{ phone: cleanMobile }, ...(email ? [{ email: email.toLowerCase() }] : [])] },
-      });
-
-      if (existingUser) {
-        return NextResponse.json({ success: false, error: "User already exists with this phone or email." }, { status: 400 });
-      }
-
-      const hashedPassword = await bcrypt.hash(password, 10);
-      const newUser = await prisma.user.create({
-        data: {
-          name: name.trim(),
-          phone: cleanMobile,
-          email: email ? email.toLowerCase() : `user_${cleanMobile}@catchbuddy.in`,
-          password: hashedPassword,
-          role: "CUSTOMER",
-          isActive: true,
-        },
-      });
-
-      const response = NextResponse.json({
-        success: true,
-        message: "Account created successfully",
-        user: { id: newUser.id, name: newUser.name, phone: newUser.phone, email: newUser.email },
-      });
-
-      response.cookies.set("customer_id", newUser.id, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 60 * 60 * 24 * 365,
-      });
-
-      return response;
     }
-
-    // 3. CHECK USER EXISTENCE FOR FORGOT PASSWORD
-    if (action === "CHECK_FORGOT_USER") {
-      const cleanMobile = mobile?.replace(/\D/g, "").slice(-10);
-      if (!cleanMobile) {
-        return NextResponse.json({ success: false, error: "Valid mobile number is required" }, { status: 400 });
-      }
-
-      const user = await prisma.user.findFirst({ where: { phone: cleanMobile } });
-      if (!user) {
-        return NextResponse.json({ success: false, error: "No account found with this mobile number." }, { status: 404 });
-      }
-
-      return NextResponse.json({ success: true, message: "User verified" });
+    let user = await prisma.user.findUnique({ where: { phone } });
+    if (action === "REGISTER_VERIFIED" && user) return NextResponse.json({ success: false, error: "Account already exists. Please sign in." }, { status: 409 });
+    if (!user) {
+      const customerEmail = typeof email === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email.trim().toLowerCase() : `user_${phone}@catchbuddy.local`;
+      user = await prisma.user.create({ data: { name: typeof name === "string" ? name.trim().slice(0, 100) : "Customer", phone, email: customerEmail, password: action === "REGISTER_VERIFIED" ? await bcrypt.hash(password, 12) : null } });
     }
-
-    // 4. RESET PASSWORD AFTER FIREBASE VERIFICATION
-    if (action === "RESET_PASSWORD_VERIFIED") {
-      const cleanMobile = mobile?.replace(/\D/g, "").slice(-10);
-      if (!cleanMobile || !newPassword) {
-        return NextResponse.json({ success: false, error: "Mobile number and new password are required" }, { status: 400 });
-      }
-
-      const hashedPassword = await bcrypt.hash(newPassword, 10);
-      await prisma.user.updateMany({
-        where: { phone: cleanMobile },
-        data: { password: hashedPassword },
-      });
-
-      return NextResponse.json({ success: true, message: "Password reset successfully!" });
-    }
-
-    return NextResponse.json({ success: false, error: "Invalid action" }, { status: 400 });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-  }
+    if (!user.isActive) return NextResponse.json({ success: false, error: "Account unavailable" }, { status: 403 });
+    const response = NextResponse.json({ success: true, user: { id: user.id, name: user.name, email: user.email, phone: user.phone } });
+    response.cookies.set("customer_session", await issueCustomerSession(user), { ...sessionCookieOptions, maxAge: 7 * 86400 });
+    return response;
+  } catch { return NextResponse.json({ success: false, error: "Unable to complete request" }, { status: 400 }); }
 }

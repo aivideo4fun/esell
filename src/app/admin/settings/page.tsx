@@ -21,10 +21,10 @@ export default function AdminSettingsPage() {
 
   // Settings form states
   const [storeName, setStoreName] = useState("CatchBuddy");
-  const [supportEmail, setSupportEmail] = useState("support@catchbuddy.com");
-  const [supportPhone, setSupportPhone] = useState("+91 9876543210");
-  const [prepaidDiscount, setPrepaidDiscount] = useState("50");
-  const [enablePrepaidDiscount, setEnablePrepaidDiscount] = useState(true);
+  const [supportEmail, setSupportEmail] = useState("support@catchbuddy.in");
+  const [supportPhone, setSupportPhone] = useState("+91 6350108713");
+  const [prepaidDiscount, setPrepaidDiscount] = useState("0");
+  const [enablePrepaidDiscount, setEnablePrepaidDiscount] = useState(false);
   const [freeShippingThreshold, setFreeShippingThreshold] = useState("0");
 
   useEffect(() => {
@@ -35,10 +35,10 @@ export default function AdminSettingsPage() {
         const data = await res.json();
         if (data.success && data.settings) {
           setStoreName(data.settings.storeName || "CatchBuddy");
-          setSupportEmail(data.settings.supportEmail || "support@catchbuddy.com");
-          setSupportPhone(data.settings.supportPhone || "+91 9876543210");
-          setPrepaidDiscount(String(data.settings.prepaidDiscount ?? 50));
-          setEnablePrepaidDiscount(data.settings.enablePrepaidDiscount ?? true);
+          setSupportEmail(data.settings.supportEmail || "support@catchbuddy.in");
+          setSupportPhone(data.settings.supportPhone || "+91 6350108713");
+          setPrepaidDiscount(String(data.settings.prepaidDiscount ?? 0));
+          setEnablePrepaidDiscount(data.settings.enablePrepaidDiscount ?? false);
           setFreeShippingThreshold(String(data.settings.freeShippingThreshold ?? 0));
         }
       } catch (err) {
@@ -125,6 +125,7 @@ export default function AdminSettingsPage() {
                 type="text"
                 required
                 value={storeName}
+                  readOnly title="Managed in verified store configuration"
                 onChange={(e) => setStoreName(e.target.value)}
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-emerald-600"
               />
@@ -138,6 +139,7 @@ export default function AdminSettingsPage() {
                 type="email"
                 required
                 value={supportEmail}
+                  readOnly title="Managed in verified store configuration"
                 onChange={(e) => setSupportEmail(e.target.value)}
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-emerald-600"
               />
@@ -151,6 +153,7 @@ export default function AdminSettingsPage() {
                 type="text"
                 required
                 value={supportPhone}
+                  readOnly title="Managed in verified store configuration"
                 onChange={(e) => setSupportPhone(e.target.value)}
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-emerald-600"
               />

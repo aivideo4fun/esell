@@ -1,3 +1,4 @@
+import { getCustomerId } from "@/lib/security/customer";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
@@ -5,6 +6,8 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
+    const userId = await getCustomerId();
+    if (!userId) return NextResponse.json({ success: false, error: "Please sign in" }, { status: 401 });
     let body;
     try {
       body = await req.json();
@@ -30,6 +33,7 @@ export async function POST(req: Request) {
     // Real Order find karein (by id or orderNumber)
     const order = await prisma.order.findFirst({
       where: {
+        userId,
         OR: [
           { id: cleanId },
           { orderNumber: cleanId },
@@ -45,6 +49,10 @@ export async function POST(req: Request) {
         { status: 404 }
       );
     }
+
+    if (order.orderStatus !== "DELIVERED") return NextResponse.json({ success: false, error: "Only delivered orders can be returned" }, { status: 409 });
+
+    if (order.orderStatus !== "DELIVERED") return NextResponse.json({ success: false, error: "Return requests are available after delivery. Contact support for other issues." }, { status: 409 });
 
     const returnNote = `[RETURN_REQUESTED]: ${reason || "Damaged/Defective"}${comments ? ` | Note: ${comments}` : ""} | Date: ${new Date().toLocaleDateString("en-IN")}`;
 

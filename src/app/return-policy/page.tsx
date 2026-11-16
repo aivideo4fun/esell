@@ -41,7 +41,7 @@ export default function ReturnPolicyPage() {
               Return requests must be raised within <strong>5 days</strong> from the date of delivery of the product.
             </li>
             <li>
-              Return charges depend on products; you can check the return costs of products on the product page itself.
+              Return charges vary by product, location and reason. If a fixed charge is not stated on the product page, contact support for a quote before purchase. Any applicable charge is confirmed before return approval.
             </li>
           </ul>
         </div>

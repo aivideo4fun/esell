@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
@@ -37,7 +38,7 @@ export async function POST(req: Request) {
       .replace(/[\s_-]+/g, "-")
       .replace(/^-+|-+$/g, "");
 
-    const slug = `${baseSlug}-${Date.now().toString().slice(-4)}`;
+    const slug = `${baseSlug || "article"}-${randomUUID().slice(0, 12)}`;
 
     const post = await (prisma as any).blogPost.create({
       data: {

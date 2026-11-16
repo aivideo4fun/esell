@@ -19,6 +19,7 @@ export async function GET(req: Request) {
       },
       include: {
         orders: {
+          where: { paymentStatus: { in: ["SUCCESS", "PAID", "COMPLETED"] } },
           select: {
             id: true,
             totalAmount: true,
@@ -128,16 +129,16 @@ export async function PATCH(req: Request) {
   try {
     const { customerId, isBlocked } = await req.json();
 
-    if (!customerId) {
+    if (typeof customerId !== "string" || typeof isBlocked !== "boolean") {
       return NextResponse.json({ success: false, error: "Customer ID is required" }, { status: 400 });
     }
 
+    const target = await prisma.user.findUnique({ where: { id: customerId }, select: { role: true } });
+    if (!target || target.role !== "CUSTOMER") return NextResponse.json({ success: false, error: "Customer account not found" }, { status: 404 });
     const updated = await prisma.user.update({
       where: { id: customerId },
-      data: {
-        isActive: !isBlocked,
-        ...({ isBlocked } as any),
-      },
+      data: { isActive: !isBlocked },
+      select: { id: true, name: true, email: true, phone: true, isActive: true },
     });
 
     return NextResponse.json({

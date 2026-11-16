@@ -36,12 +36,13 @@ const prepaidOrdersCount = await prisma.order.count({
     // 3. Pending Dispatch Orders count
     const pendingDispatchCount = await prisma.order.count({
       where: {
-        orderStatus: { in: ["PENDING", "PROCESSING", "CONFIRMED"] },
+        orderStatus: { in: ["PAID", "PROCESSING", "CONFIRMED"] },
+        paymentStatus: { in: ["SUCCESS", "PAID", "COMPLETED"] },
       },
     });
 
     // 4. Active Catalog Products & Categories count
-    const activeProductsCount = await prisma.product.count();
+    const activeProductsCount = await prisma.product.count({ where: { isActive: true } });
     const categoriesCount = await prisma.category.count();
 
     return NextResponse.json(

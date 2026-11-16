@@ -1,3 +1,4 @@
+import { getCustomerId } from "@/lib/security/customer";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
@@ -5,6 +6,8 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
+    const userId = await getCustomerId();
+    if (!userId) return NextResponse.json({ success: false, error: "Please sign in" }, { status: 401 });
     const body = await req.json();
     const { orderId, reason, images } = body;
 
@@ -14,6 +17,7 @@ export async function POST(req: Request) {
 
     const existingOrder = await prisma.order.findFirst({
       where: {
+        userId,
         OR: [
           { id: orderId },
           { orderNumber: orderId }
@@ -24,6 +28,10 @@ export async function POST(req: Request) {
     if (!existingOrder) {
       return NextResponse.json({ success: false, error: "Order not found" }, { status: 404 });
     }
+
+    if (existingOrder.orderStatus !== "DELIVERED") return NextResponse.json({ success: false, error: "Only delivered orders can be returned" }, { status: 409 });
+
+    if (existingOrder.orderStatus !== "DELIVERED") return NextResponse.json({ success: false, error: "Return requests are available after delivery. Contact support for other issues." }, { status: 409 });
 
     // Properly format and store images JSON array
     const imagesArray = Array.isArray(images) ? images : [];

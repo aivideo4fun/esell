@@ -1,114 +1,21 @@
+import { readConfig } from "@/lib/admin-config";
+import { homepageDefaults } from "@/lib/store-settings";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-
+import { formatCategory, formatProduct } from "@/lib/catalog";
 export const dynamic = "force-dynamic";
-
-function getCategoryIcon(name: string, icon: string | null): string {
-  if (icon && icon.trim()) return icon;
-
-  const n = name.toLowerCase();
-  if (n.includes("wiper") || n.includes("clean")) return "🧹";
-  if (n.includes("hook") || n.includes("wall")) return "🪝";
-  if (n.includes("roti") || n.includes("mat")) return "🫓";
-  if (n.includes("scrub") || n.includes("dishwash")) return "🧽";
-  if (n.includes("glove") || n.includes("oven")) return "🧤";
-  if (n.includes("rope") || n.includes("cloth")) return "🧺";
-  if (n.includes("kitchen")) return "🍳";
-  if (n.includes("gadget") || n.includes("electronics")) return "🎧";
-  if (n.includes("fashion") || n.includes("cloth")) return "👕";
-  if (n.includes("bag") || n.includes("garbage")) return "🎒";
-  if (n.includes("cover") || n.includes("drain")) return "🛡️";
-  if (n.includes("car")) return "🚗";
-  if (n.includes("beauty")) return "💄";
-  if (n.includes("toy")) return "🧸";
-  if (n.includes("home")) return "🏠";
-  return "📦";
-}
-
 export async function GET() {
   try {
-    // 1. Fetch top 8 Main Categories (where parentId is null)
-    let rawCategories = await prisma.category.findMany({
-      where: { parentId: null },
-      take: 8,
-      orderBy: { createdAt: "desc" },
-      select: { id: true, name: true, slug: true, icon: true },
-    });
-
-    if (rawCategories.length === 0) {
-      rawCategories = await prisma.category.findMany({
-        take: 8,
-        orderBy: { createdAt: "desc" },
-        select: { id: true, name: true, slug: true, icon: true },
-      });
-    }
-    const categories = rawCategories.map((c) => ({
-      id: c.id,
-      name: c.name,
-      slug: c.slug || c.name.toLowerCase().replace(/\s+/g, "-"),
-      icon: getCategoryIcon(c.name, c.icon),
-    }));
-
-    // Fetch products including full images relation
-    const products = await prisma.product.findMany({
-      take: 8,
-      orderBy: { createdAt: "desc" },
-      include: {
-        images: true,
-      },
-    });
-
-    const formattedProducts = products.map((p: any) => {
-      const price = p.price || 0;
-      const mrp = p.originalPrice || p.mrp || Math.round(price * 1.3);
-      const discount = mrp > price ? `${Math.round(((mrp - price) / mrp) * 100)}% OFF` : "SPECIAL";
-
-      // Proper Image Extractor with strict /logo.png fallback (ignoring unsplash)
-      let img = "";
-      if (Array.isArray(p.images) && p.images.length > 0) {
-        const first = p.images[0];
-        if (typeof first === "string") img = first;
-        else if (first?.url) img = first.url;
-      } else if (typeof p.image === "string") {
-        img = p.image;
-      } else if (typeof p.imageUrl === "string") {
-        img = p.imageUrl;
-      }
-
-      const finalImg = img && img.trim() !== "" && !img.includes("unsplash.com") ? img : "/logo.png";
-
-      return {
-        id: p.id,
-        slug: p.slug || p.id,
-        title: p.title || p.name || "Product",
-        price: price,
-        mrp: mrp,
-        discount: p.badge || discount,
-        rating: p.rating || 4.5,
-        reviews: p.reviewCount ? `${p.reviewCount}` : "120+",
-        image: finalImg,
-      };
-    });
-
-    const activeCoupon = await prisma.coupon.findFirst({
-      where: { isActive: true },
-      orderBy: { createdAt: "desc" },
-    }).catch(() => null);
-
-    return NextResponse.json({
-      success: true,
-      categories: categories.length > 0 ? categories : null,
-      products: formattedProducts.length > 0 ? formattedProducts : null,
-      coupon: activeCoupon || null,
-    });
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Internal error";
-    return NextResponse.json({
-      success: false,
-      categories: null,
-      products: null,
-      coupon: null,
-      error: msg,
-    });
-  }
+    const homepage = await readConfig("HOMEPAGE", homepageDefaults);
+    const [categoryRows, productRows] = await Promise.all([
+      prisma.category.findMany({ where: { products: { some: { isActive: true } } }, orderBy: { displayOrder: "asc" }, take: 32 }),
+      prisma.product.findMany({ where: { isActive: true }, take: 8, orderBy: { createdAt: "desc" }, include: { category: true, images: true, reviews: { where: { status: "APPROVED" }, select: { rating: true } } } }),
+    ]);
+    const seen = new Set<string>();
+    const chosenRows = homepage.dealIds.length ? await prisma.product.findMany({ where: { id: { in: homepage.dealIds }, isActive: true }, include: { category: true, images: true, reviews: { where: { status: "APPROVED" }, select: { rating: true } } } }) : [];
+    const dealProducts = homepage.dealIds.map((id) => chosenRows.find((p) => p.id === id)).filter((p): p is NonNullable<typeof p> => !!p).map(formatProduct).map((p) => ({ ...p, mrp: Math.max(p.price, p.originalPrice), image: p.images[0]?.url || "/product-placeholder.svg", reviews: p.reviewCount }));
+    const categories = categoryRows.map(formatCategory).filter((c) => { const key = c.name.toLowerCase(); if (seen.has(key)) return false; seen.add(key); return true; }).slice(0, 8);
+    const products = productRows.map(formatProduct).map((p) => ({ ...p, mrp: p.originalPrice > p.price ? p.originalPrice : p.price, image: p.images[0]?.url || "/product-placeholder.svg", reviews: p.reviewCount, discount: p.originalPrice > p.price ? `${Math.round((p.originalPrice - p.price) / p.originalPrice * 100)}% OFF` : "" }));
+    return NextResponse.json({ success: true, categories, products, dealProduct: products[0] || null, homepage, dealProducts });
+  } catch { return NextResponse.json({ success: false, error: "Unable to load store", categories: [], products: [] }, { status: 503 }); }
 }

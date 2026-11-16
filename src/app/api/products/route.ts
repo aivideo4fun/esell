@@ -1,3 +1,4 @@
+import { formatProduct } from "@/lib/catalog";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
@@ -13,13 +14,14 @@ export async function GET(req: Request) {
     // 'q' ya 'search' dono me se jo bhi aaye support karein
     const search = searchParams.get("q") || searchParams.get("search");
     const limitParam = searchParams.get("limit");
-    const limit = limitParam ? parseInt(limitParam, 10) : undefined;
+    const parsedLimit = Number(limitParam);
+    const limit = limitParam && Number.isInteger(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 500) : 500;
 
-    const whereClause: Prisma.ProductWhereInput = {};
+    const whereClause: Prisma.ProductWhereInput = { isActive: true };
 
     if (category && category !== "ALL") {
       whereClause.category = {
-        name: { equals: category, mode: "insensitive" },
+        OR: [{ name: { equals: category, mode: "insensitive" } }, { slug: category }],
       };
     }
 
@@ -36,13 +38,14 @@ export async function GET(req: Request) {
       include: {
         images: true,
         category: true,
+        reviews: { where: { status: "APPROVED" }, select: { rating: true } },
       },
       orderBy: { createdAt: "desc" },
       ...(limit ? { take: limit } : {}),
     });
 
     return NextResponse.json(
-      { success: true, products },
+      { success: true, products: products.map(formatProduct) },
       {
         headers: {
           "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",

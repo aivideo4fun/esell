@@ -21,7 +21,7 @@ export async function GET() {
     });
 
     const paidOrders = orders.filter(
-      (o) => o.paymentStatus === "SUCCESS" || o.orderStatus === "PAID" || o.orderStatus === "DELIVERED"
+      (o) => ["SUCCESS", "PAID", "COMPLETED"].includes(o.paymentStatus)
     );
 
     const totalRevenue = paidOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
@@ -30,7 +30,7 @@ export async function GET() {
 
     // 1. Top Selling Products
     const productSalesMap: { [key: string]: { title: string; count: number; revenue: number } } = {};
-    orders.forEach((o) => {
+    paidOrders.forEach((o) => {
       o.items?.forEach((item) => {
         const pId = item.productId;
         const pTitle = item.product?.title || "Unknown Product";
@@ -48,7 +48,7 @@ export async function GET() {
 
     // 2. Category Performance
     const categoryMap: { [key: string]: number } = {};
-    orders.forEach((o) => {
+    paidOrders.forEach((o) => {
       o.items?.forEach((item) => {
         const catName = item.product?.category?.name || "General";
         categoryMap[catName] = (categoryMap[catName] || 0) + item.price * item.quantity;

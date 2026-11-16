@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { numberField, textField } from "@/lib/admin-validation";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
@@ -51,7 +53,7 @@ export async function POST(req: Request) {
 
       return NextResponse.json({
         success: true,
-        message: "Payout marked as SETTLED successfully!",
+        message: "Payout accounting record marked settled. No bank transfer was made.",
       });
     }
 
@@ -60,10 +62,10 @@ export async function POST(req: Request) {
       const count = await (prisma as any).supplierPayout.count();
       const newPayout = await (prisma as any).supplierPayout.create({
         data: {
-          payoutRef: `PO-${300 + count + 1}`,
-          vendorName,
-          settlementAmount: parseFloat(settlementAmount),
-          bankAccount,
+          payoutRef: `PO-${randomUUID().slice(0, 12).toUpperCase()}`,
+          vendorName: textField(vendorName, "vendor name"),
+          settlementAmount: numberField(settlementAmount, "settlement amount", 0.01),
+          bankAccount: textField(bankAccount, "account/reference", 100),
           dueDate: new Date(dueDate),
           status: "SCHEDULED",
         },

@@ -1,133 +1,33 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
-
+import { textField } from "@/lib/admin-validation";
 export const dynamic = "force-dynamic";
-
-// 1. GET: Tickets fetch karein (Admin & Customer Support)
 export async function GET(req: Request) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const email = searchParams.get("email");
-
-    let whereClause: any = {};
-    if (email) {
-      whereClause.customerEmail = email;
-    }
-
-    const tickets = await (prisma as any).supportTicket.findMany({
-      where: whereClause,
-      include: {
-        user: {
-          select: { name: true, email: true, phone: true },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-    });
-
-    return NextResponse.json({ success: true, tickets });
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to load tickets";
-    return NextResponse.json({ success: false, error: msg, tickets: [] }, { status: 500 });
-  }
+  const email = new URL(req.url).searchParams.get("email");
+  const rows = await prisma.supportTicket.findMany({ where: email ? { customerEmail: email } : {}, include: { user: { select: { name: true, email: true, phone: true } } }, orderBy: { createdAt: "desc" }, take: 1000 });
+  const tickets = rows.map((t) => ({ ...t, customerName: t.customerName || t.user?.name || t.message.match(/\[Customer:\s*([^\]]+)\]/)?.[1] || "Customer", cleanMessage: t.message.replace(/^\[Customer:[^\]]*\]\s*/, "") }));
+  return NextResponse.json({ success: true, tickets, counts: { all: tickets.length, open: tickets.filter((t) => t.status === "OPEN").length, inProgress: tickets.filter((t) => t.status === "IN_PROGRESS").length, resolved: tickets.filter((t) => t.status === "RESOLVED").length } });
 }
-
-// 2. POST: Create Ticket (Exact Schema Matching - No 'customerName' argument error)
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { name, email, phone, subject, message } = body;
-
-    if (!message) {
-      return NextResponse.json(
-        { success: false, error: "Message is required" },
-        { status: 400 }
-      );
-    }
-
-    const count = await (prisma as any).supportTicket.count();
-    const ticketNumber = `TCK-${108 + count + 1}`;
-
-    // Agar user database mein exist karta hai toh userId connect kar do
-    let userId: string | undefined = undefined;
-    if (email) {
-      const existingUser = await (prisma as any).user.findUnique({
-        where: { email },
-        select: { id: true },
-      });
-      if (existingUser) {
-        userId = existingUser.id;
-      }
-    }
-
-    // Name ko message ke start mein cleanly save karte hain agar schema mein direct column na ho
-    const formattedMessage = name ? `[Customer: ${name}]\n${message}` : message;
-
-    const newTicket = await (prisma as any).supportTicket.create({
-      data: {
-        ticketNumber,
-        subject: subject || "Order Inquiry",
-        message: formattedMessage,
-        priority: subject?.toLowerCase().includes("urgent") || subject?.toLowerCase().includes("track") ? "HIGH" : "MEDIUM",
-        status: "OPEN",
-        customerEmail: email || null,
-        customerPhone: phone || null,
-        ...(userId ? { userId } : {}),
-      },
-      include: {
-        user: {
-          select: { name: true, email: true, phone: true },
-        },
-      },
-    });
-
-    return NextResponse.json({
-      success: true,
-      message: "Ticket created successfully",
-      ticket: newTicket,
-    });
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to create ticket";
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
-  }
+    const b = await req.json();
+    const ticket = await prisma.supportTicket.create({ data: { ticketNumber: `TCK-${randomUUID().slice(0, 12).toUpperCase()}`, subject: textField(b.subject || "General Inquiry", "subject"), message: textField(b.message, "message", 10000), customerName: textField(b.name || b.customerName || "Customer", "name"), customerEmail: b.email || b.customerEmail || null, customerPhone: b.phone || b.customerPhone || null } });
+    return NextResponse.json({ success: true, ticket }, { status: 201 });
+  } catch (e) { return NextResponse.json({ success: false, error: e instanceof Error ? e.message : "Unable to create ticket" }, { status: 400 }); }
 }
-
-// 3. PATCH: Update Status
 export async function PATCH(req: Request) {
   try {
-    const body = await req.json();
-    const { id, status } = body;
-
-    if (!id || !status) {
-      return NextResponse.json({ success: false, error: "Invalid parameters" }, { status: 400 });
-    }
-
-    const updated = await (prisma as any).supportTicket.update({
-      where: { id },
-      data: { status },
-    });
-
-    return NextResponse.json({ success: true, ticket: updated });
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to update status";
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
-  }
+    const b = await req.json(); const id = textField(b.id || b.ticketId, "ticket ID");
+    if (!["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"].includes(b.status)) throw new Error("Invalid ticket status");
+    const ticket = await prisma.supportTicket.update({ where: { id }, data: { status: b.status, ...(b.adminReply !== undefined ? { adminReply: textField(b.adminReply, "reply", 10000, true) } : {}) } });
+    return NextResponse.json({ success: true, ticket });
+  } catch (e) { return NextResponse.json({ success: false, error: e instanceof Error ? e.message : "Unable to update ticket" }, { status: 400 }); }
 }
-
-// 4. DELETE: Delete Ticket
 export async function DELETE(req: Request) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const id = searchParams.get("id");
-
-    if (!id) {
-      return NextResponse.json({ success: false, error: "Ticket ID required" }, { status: 400 });
-    }
-
-    await (prisma as any).supportTicket.delete({ where: { id } });
-
-    return NextResponse.json({ success: true, message: "Ticket deleted" });
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to delete ticket";
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
-  }
+  const id = new URL(req.url).searchParams.get("id");
+  if (!id) return NextResponse.json({ success: false }, { status: 400 });
+  // Preserve customer support history rather than destroying it.
+  await prisma.supportTicket.update({ where: { id }, data: { status: "CLOSED" } });
+  return NextResponse.json({ success: true, message: "Ticket closed; history retained" });
 }

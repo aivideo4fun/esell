@@ -1,86 +1,19 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-
-export const dynamic = "force-dynamic";
-
-export async function GET(req: Request) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const email = searchParams.get("email");
-    const phone = searchParams.get("phone");
-
-    if (!email && !phone) {
-      return NextResponse.json({ success: false, error: "Identifier required" }, { status: 400 });
-    }
-
-    const customer = await prisma.user.findFirst({
-      where: {
-        OR: [
-          ...(email ? [{ email: email.trim().toLowerCase() }] : []),
-          ...(phone ? [{ phone: phone.replace(/\D/g, "").slice(-10) }] : []),
-        ],
-      },
-    });
-
-    if (!customer) {
-      return NextResponse.json({ success: false, error: "Customer not found" }, { status: 404 });
-    }
-
-    return NextResponse.json({
-      success: true,
-      customer: {
-        id: customer.id,
-        name: customer.name || "Customer",
-        email: customer.email || "",
-        phone: customer.phone || "",
-        isEmailVerified: !!(customer as any).isEmailVerified,
-      },
-    });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
-  }
+import { getCustomerId } from "@/lib/security/customer";
+const select = { id: true, name: true, email: true, phone: true, isEmailVerified: true };
+export async function GET() {
+  const id = await getCustomerId();
+  if (!id) return NextResponse.json({ success: false, error: "Please sign in" }, { status: 401 });
+  const customer = await prisma.user.findUnique({ where: { id }, select });
+  return NextResponse.json({ success: true, customer });
 }
-
 export async function PUT(req: Request) {
-  try {
-    const body = await req.json();
-    const { name, phone, email, isEmailVerified } = body;
-
-    const cleanEmail = (email || "").trim().toLowerCase();
-    const cleanPhone = (phone || "").replace(/\D/g, "").slice(-10);
-
-    const existingUser = await prisma.user.findFirst({
-      where: {
-        OR: [
-          ...(cleanEmail ? [{ email: cleanEmail }] : []),
-          ...(cleanPhone ? [{ phone: cleanPhone }] : []),
-        ],
-      },
-    });
-
-    let updatedUser;
-    if (existingUser) {
-      updatedUser = await prisma.user.update({
-        where: { id: existingUser.id },
-        data: {
-          name: name || existingUser.name,
-          phone: cleanPhone || existingUser.phone,
-          ...(typeof isEmailVerified === "boolean" ? { isEmailVerified } : {}),
-        },
-      });
-    } else {
-      updatedUser = await prisma.user.create({
-        data: {
-          email: cleanEmail || `user_${Date.now()}@catchbuddy.in`,
-          phone: cleanPhone || "9999999999",
-          name: name || "Customer",
-          isEmailVerified: !!isEmailVerified,
-        },
-      });
-    }
-
-    return NextResponse.json({ success: true, customer: updatedUser });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
-  }
+  const id = await getCustomerId();
+  if (!id) return NextResponse.json({ success: false, error: "Please sign in" }, { status: 401 });
+  const body = await req.json();
+  if (typeof body.name !== "string" || !body.name.trim() || body.name.length > 100) return NextResponse.json({ success: false, error: "Enter a valid name" }, { status: 400 });
+  // Phone, email and verification flags require separate verified ownership flows.
+  const customer = await prisma.user.update({ where: { id }, data: { name: body.name.trim() }, select });
+  return NextResponse.json({ success: true, customer });
 }

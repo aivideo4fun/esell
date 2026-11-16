@@ -1,121 +1,30 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-
-// 1. GET: Fetch all coupons
-export async function GET() {
-  try {
-    const coupons = await prisma.coupon.findMany({
-      orderBy: { createdAt: "desc" },
-    });
-    return NextResponse.json({ success: true, coupons });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error?.message || "Failed to fetch coupons" },
-      { status: 500 }
-    );
-  }
-}
-
-// 2. POST: Create a new coupon
+import { numberField, textField } from "@/lib/admin-validation";
+export const dynamic = "force-dynamic";
+export async function GET() { return NextResponse.json({ success: true, coupons: await prisma.coupon.findMany({ orderBy: { createdAt: "desc" } }) }); }
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const {
-      code,
-      description,
-      discountType,
-      discountValue,
-      minOrderValue,
-      maxDiscount,
-      usageLimit,
-      validTo,
-    } = body;
-
-    if (!code || !discountValue) {
-      return NextResponse.json(
-        { success: false, error: "Coupon Code and Discount Value are required" },
-        { status: 400 }
-      );
-    }
-
-    const cleanCode = code.trim().toUpperCase();
-
-    const existing = await prisma.coupon.findUnique({
-      where: { code: cleanCode },
-    });
-
-    if (existing) {
-      return NextResponse.json(
-        { success: false, error: "Coupon code already exists" },
-        { status: 400 }
-      );
-    }
-
-    const coupon = await prisma.coupon.create({
-      data: {
-        code: cleanCode,
-        description: description || null,
-        discountType: discountType || "PERCENTAGE",
-        discountValue: parseFloat(discountValue),
-        minOrderValue: minOrderValue ? parseFloat(minOrderValue) : 0,
-        maxDiscount: maxDiscount ? parseFloat(maxDiscount) : null,
-        usageLimit: usageLimit ? parseInt(usageLimit) : null,
-        validTo: validTo ? new Date(validTo) : null,
-        isActive: true,
-      },
-    });
-
+    const b = await req.json(); const code = textField(b.code, "coupon code", 40).toUpperCase();
+    if (!/^[A-Z0-9_-]{2,40}$/.test(code)) throw new Error("Use letters, numbers, dash or underscore in coupon codes");
+    const discountType = b.discountType || "PERCENTAGE";
+    if (!["PERCENTAGE", "FLAT", "FREE_SHIPPING"].includes(discountType)) throw new Error("Invalid discount type");
+    const discountValue = numberField(b.discountValue, "discount", discountType === "FREE_SHIPPING" ? 0 : 0.01);
+    if (discountType === "PERCENTAGE" && discountValue > 100) throw new Error("Percentage cannot exceed 100");
+    const validTo = b.validTo ? new Date(b.validTo) : null; if (validTo && (!Number.isFinite(validTo.getTime()) || validTo <= new Date())) throw new Error("Choose a future expiry date");
+    const existing = await prisma.coupon.findFirst({ where: { code: { equals: code, mode: "insensitive" } } });
+    if (existing) return NextResponse.json({ success: false, error: "Coupon already exists" }, { status: 409 });
+    const coupon = await prisma.coupon.create({ data: { code, description: typeof b.description === "string" ? b.description.slice(0, 1000) : null, discountType, discountValue, minOrderValue: numberField(b.minOrderValue || 0, "minimum order"), maxDiscount: b.maxDiscount ? numberField(b.maxDiscount, "maximum discount") : null, usageLimit: b.usageLimit ? numberField(b.usageLimit, "usage limit", 1, true) : null, validTo } });
     return NextResponse.json({ success: true, coupon });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error?.message || "Failed to create coupon" },
-      { status: 500 }
-    );
-  }
+  } catch (e) { return NextResponse.json({ success: false, error: e instanceof Error ? e.message : "Unable to create coupon" }, { status: 400 }); }
 }
-
-// 3. PATCH: Toggle Active status
 export async function PATCH(req: Request) {
-  try {
-    const body = await req.json();
-    const { id, isActive } = body;
-
-    const updated = await prisma.coupon.update({
-      where: { id },
-      data: { isActive },
-    });
-
-    return NextResponse.json({ success: true, coupon: updated });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error?.message || "Failed to update coupon" },
-      { status: 500 }
-    );
-  }
+  const { id, isActive } = await req.json();
+  if (typeof id !== "string" || typeof isActive !== "boolean") return NextResponse.json({ success: false, error: "Invalid coupon status" }, { status: 400 });
+  return NextResponse.json({ success: true, coupon: await prisma.coupon.update({ where: { id }, data: { isActive } }) });
 }
-
-// 4. DELETE: Delete coupon
 export async function DELETE(req: Request) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const id = searchParams.get("id");
-
-    if (!id) {
-      return NextResponse.json(
-        { success: false, error: "Coupon ID required" },
-        { status: 400 }
-      );
-    }
-
-    await prisma.coupon.delete({
-      where: { id },
-    });
-
-    return NextResponse.json({ success: true, message: "Coupon deleted" });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error?.message || "Failed to delete coupon" },
-      { status: 500 }
-    );
-  }
+  const id = new URL(req.url).searchParams.get("id"); if (!id) return NextResponse.json({ success: false }, { status: 400 });
+  await prisma.coupon.update({ where: { id }, data: { isActive: false } });
+  return NextResponse.json({ success: true, message: "Coupon deactivated; usage history retained" });
 }

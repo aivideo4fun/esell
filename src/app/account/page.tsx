@@ -175,7 +175,7 @@ export default function CustomerAccountPage() {
 
         // Notifications (Admin broadcast & alerts)
         try {
-          const resNotif = await fetch("/api/admin/notifications", { cache: "no-store" });
+          const resNotif = await fetch("/api/customer/notifications", { cache: "no-store" });
           const dataNotif = await resNotif.json();
           if (dataNotif.success) {
             const allNotifs = dataNotif.notifications || [];
@@ -197,7 +197,7 @@ export default function CustomerAccountPage() {
         if (activeEmail) {
           try {
             const resTickets = await fetch(
-              `/api/admin/tickets?email=${encodeURIComponent(activeEmail)}`,
+              `/api/support/tickets?email=${encodeURIComponent(activeEmail)}`,
               { cache: "no-store" }
             );
             const dataTickets = await resTickets.json();
@@ -375,10 +375,10 @@ export default function CustomerAccountPage() {
     setTimeout(() => setCopiedCode(null), 2000);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     localStorage.removeItem("cb_customer");
     localStorage.removeItem("cb_user");
-    document.cookie = "customer_id=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;";
+    await fetch("/api/auth/customer", { method: "DELETE" });
     window.dispatchEvent(new Event("customer-auth-changed"));
     window.dispatchEvent(new Event("storage"));
     window.location.href = "/";
@@ -388,7 +388,7 @@ export default function CustomerAccountPage() {
     e.preventDefault();
     setSubmittingSupport(true);
     try {
-      const res = await fetch("/api/admin/tickets", {
+      const res = await fetch("/api/support/tickets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

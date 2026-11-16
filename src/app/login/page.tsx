@@ -139,7 +139,8 @@ export default function AuthPage() {
           window.dispatchEvent(new Event("customer-auth-changed"));
           window.dispatchEvent(new Event("storage"));
         }
-        router.push("/");
+        const redirect = new URLSearchParams(window.location.search).get("redirect");
+        router.push(redirect && redirect.startsWith("/") && !redirect.startsWith("//") && !redirect.includes("\\") ? redirect : "/");
       } else {
         setErrorMsg(data.error || "Invalid login credentials or wrong password.");
       }
@@ -229,6 +230,7 @@ export default function AuthPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "REGISTER_VERIFIED",
+          idToken: await auth?.currentUser?.getIdToken(true),
           name: fullName.trim(),
           email: email.trim().toLowerCase(),
           mobile: mobile.replace(/\D/g, "").slice(-10),
@@ -241,7 +243,8 @@ export default function AuthPage() {
         localStorage.setItem("cb_user", JSON.stringify(data.user));
         localStorage.setItem("cb_customer", JSON.stringify(data.user));
         window.dispatchEvent(new Event("customer-auth-changed"));
-        router.push("/");
+        const redirect = new URLSearchParams(window.location.search).get("redirect");
+        router.push(redirect && redirect.startsWith("/") && !redirect.startsWith("//") && !redirect.includes("\\") ? redirect : "/");
       } else {
         setErrorMsg(data.error || "Failed to complete registration");
       }
@@ -356,6 +359,7 @@ export default function AuthPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "RESET_PASSWORD_VERIFIED",
+          idToken: await auth?.currentUser?.getIdToken(true),
           mobile: forgotPhone.replace(/\D/g, "").slice(-10),
           newPassword: newPassword,
         }),

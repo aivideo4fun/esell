@@ -150,9 +150,9 @@ export default function ReturnsRefundsPage() {
         targetSupplierStatus = "PICKUP_SCHEDULED";
       } else if (status === "RETURNED") {
         targetOrderStatus = "RETURNED";
-        targetSupplierStatus = "REFUND_COMPLETED";
+        targetSupplierStatus = "RETURN_RECEIVED";
       } else if (status === "REJECTED") {
-        targetOrderStatus = "DELIVERED";
+        targetOrderStatus = "RETURN_REJECTED";
         targetSupplierStatus = "RETURN_REJECTED";
       }
 

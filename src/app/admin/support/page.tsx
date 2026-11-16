@@ -36,7 +36,7 @@ export default function AdminSupportDeskPage() {
   const fetchTickets = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/support/tickets?role=admin", { cache: "no-store" });
+      const res = await fetch("/api/admin/tickets", { cache: "no-store" });
       const data = await res.json();
       if (data.success) {
         setTickets(data.tickets || []);
@@ -56,7 +56,7 @@ export default function AdminSupportDeskPage() {
   const handleUpdateStatus = async (ticketId: string, status: "IN_PROGRESS" | "RESOLVED" | "OPEN") => {
     try {
       setUpdatingId(ticketId);
-      const res = await fetch("/api/support/tickets", {
+      const res = await fetch("/api/admin/tickets", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ticketId, status }),

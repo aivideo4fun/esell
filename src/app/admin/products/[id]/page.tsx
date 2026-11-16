@@ -1,172 +1,41 @@
-/* eslint-disable @next/next/no-img-element */
-import { prisma } from "@/lib/prisma";
+"use client";
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { ShieldCheck, Truck, RotateCcw, Zap } from "lucide-react";
-import ProductDetailClient from "./ProductDetailClient";
-
-interface DbImage {
-  id: string;
-  url: string;
-  isPrimary?: boolean;
-}
-
-interface DbCategory {
-  id: string;
-  name: string;
-}
-
-interface DbProduct {
-  id: string;
-  title: string;
-  price: number;
-  originalPrice: number;
-  mrp?: number;
-  description: string | null;
-  images: (DbImage | string)[];
-  category: DbCategory | null;
-  slug: string | null;
-}
-
-export default async function ProductDetailPage({
-  params,
-}: {
-  params: Promise<{ id?: string[] | string }>;
-}) {
-  const resolvedParams = await params;
-  const raw = resolvedParams?.id;
-  const paramVal = Array.isArray(raw) ? raw.join("/") : raw || "";
-  const cleanParam = decodeURIComponent(paramVal).trim();
-
-  let product: DbProduct | null = null;
-
-  try {
-    if (cleanParam) {
-      product = (await prisma.product.findFirst({
-        where: {
-          OR: [{ slug: cleanParam }, { id: cleanParam }],
-        },
-        include: { images: true, category: true },
-      })) as unknown as DbProduct | null;
-    }
-
-    if (!product) {
-      product = (await prisma.product.findFirst({
-        orderBy: { createdAt: "desc" },
-        include: { images: true, category: true },
-      })) as unknown as DbProduct | null;
-    }
-  } catch (err) {
-    console.error("DB Fetch Error:", err);
+export default function EditProduct({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
+  const [product, setProduct] = useState<any>(null);
+  const [images, setImages] = useState("");
+  const [sizes, setSizes] = useState(""); const [colors, setColors] = useState("");
+  const [message, setMessage] = useState(""); const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    fetch(`/api/admin/products/${encodeURIComponent(id)}`).then((r) => r.json()).then((data) => {
+      if (!data.success) throw new Error(data.error || "Product not found");
+      setProduct(data.product); setImages(data.product.images.map((i: any) => i.url).join("\n")); setSizes(data.product.sizes.join(", ")); setColors(data.product.colors.join(", "));
+    }).catch((e) => setMessage(e.message));
+  }, [id]);
+  async function save(e: React.FormEvent) {
+    e.preventDefault(); setBusy(true); setMessage("");
+    try {
+      const r = await fetch(`/api/admin/products/${encodeURIComponent(id)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: product.title, description: product.description || "", price: product.price, originalPrice: product.originalPrice, stock: product.stock, isActive: product.isActive, sizes: sizes.split(",").map((v) => v.trim()).filter(Boolean), colors: colors.split(",").map((v) => v.trim()).filter(Boolean), imageUrls: images.split("\n").map((v) => v.trim()).filter(Boolean) }) });
+      const data = await r.json(); if (!data.success) throw new Error(data.error || "Save failed"); setProduct(data.product); setMessage("Product saved to the database.");
+    } catch (e) { setMessage(e instanceof Error ? e.message : "Unable to save"); } finally { setBusy(false); }
   }
-
-  // Guaranteed product object
-  const currentProduct: DbProduct = product || {
-    id: "default-id",
-    title: "Trending Smart Gadget",
-    price: 233,
-    originalPrice: 1088,
-    description: "Premium quality verified viral gadget with durable built quality.",
-    category: { id: "cat-1", name: "KITCHEN" },
-    images: [],
-    slug: "gadget",
-  };
-
-  const cutPrice = Number(currentProduct.originalPrice || currentProduct.mrp || 1088);
-  const sellingPrice = Number(currentProduct.price || 233);
-  const discount =
-    cutPrice > sellingPrice
-      ? Math.round(((cutPrice - sellingPrice) / cutPrice) * 100)
-      : 0;
-
-  const productForClient = {
-    id: currentProduct.id,
-    title: currentProduct.title,
-    price: sellingPrice,
-    originalPrice: cutPrice,
-    description: currentProduct.description,
-    images: (currentProduct.images || []).map((img: DbImage | string) =>
-      typeof img === "string" ? img : img.url
-    ),
-    category: currentProduct.category?.name || "KITCHEN",
-    slug: currentProduct.slug,
-  };
-
-  const displayImage =
-    productForClient.images[0] ||
-    "https://images.unsplash.com/photo-1602143407151-7111542de6e8?auto=format&fit=crop&w=800&q=80";
-
-  return (
-    <div className="min-h-screen bg-white text-[#0f172a] py-8 sm:py-12">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <nav className="text-xs font-bold text-[#64748b] mb-6 flex items-center gap-2">
-          <Link href="/" className="hover:text-[#065f46]">Home</Link>
-          <span>/</span>
-          <Link href="/shop" className="hover:text-[#065f46]">Shop</Link>
-          <span>/</span>
-          <span className="text-[#0f172a] truncate max-w-xs">{currentProduct.title}</span>
-        </nav>
-
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
-          <div className="lg:col-span-6 space-y-4">
-            <div className="relative aspect-square w-full rounded-3xl bg-[#f8fafc] border border-gray-200 overflow-hidden flex items-center justify-center p-6">
-              <img
-                src={displayImage}
-                alt={currentProduct.title}
-                className="object-contain w-full h-full"
-              />
-              {discount > 0 && (
-                <span className="absolute top-4 left-4 bg-[#16a34a] text-white text-xs font-black px-3 py-1 rounded-lg">
-                  {discount}% OFF
-                </span>
-              )}
-            </div>
-          </div>
-
-          <div className="lg:col-span-6 space-y-6">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#f0fdf4] border border-[#bbf7d0] text-[#16a34a] text-xs font-bold">
-              <Zap className="w-3.5 h-3.5 fill-[#16a34a]" /> Direct Verified Dispatch
-            </div>
-
-            <h1 className="text-2xl sm:text-4xl font-black text-[#0f172a] leading-tight capitalize">
-              {currentProduct.title}
-            </h1>
-
-            <div className="flex items-baseline gap-3 p-4 rounded-2xl bg-[#f8fafc] border border-gray-200">
-              <span className="text-3xl font-black text-[#065f46]">₹{sellingPrice}</span>
-              {cutPrice > sellingPrice && (
-                <span className="text-base font-bold text-[#64748b] line-through">₹{cutPrice}</span>
-              )}
-              <span className="text-xs font-black text-[#16a34a] bg-[#f0fdf4] px-2.5 py-1 rounded-md border border-[#bbf7d0]">
-                Flat ₹50 Extra Off on Prepaid UPI
-              </span>
-            </div>
-
-            <ProductDetailClient product={productForClient} />
-
-            <div className="grid grid-cols-3 gap-3 pt-4 border-t border-gray-100 text-center">
-              <div className="p-3 bg-[#f8fafc] rounded-xl border border-gray-100">
-                <Truck className="w-5 h-5 text-[#16a34a] mx-auto mb-1" />
-                <p className="text-[11px] font-bold text-[#0f172a]">Free Express Delivery</p>
-              </div>
-              <div className="p-3 bg-[#f8fafc] rounded-xl border border-gray-100">
-                <ShieldCheck className="w-5 h-5 text-[#16a34a] mx-auto mb-1" />
-                <p className="text-[11px] font-bold text-[#0f172a]">100% Verified Safe</p>
-              </div>
-              <div className="p-3 bg-[#f8fafc] rounded-xl border border-gray-100">
-                <RotateCcw className="w-5 h-5 text-[#16a34a] mx-auto mb-1" />
-                <p className="text-[11px] font-bold text-[#0f172a]">5-Day Replacement</p>
-              </div>
-            </div>
-
-            <div className="space-y-2 pt-4 border-t border-gray-100">
-              <h3 className="text-sm font-black text-[#0f172a]">Product Overview</h3>
-              <p className="text-xs sm:text-sm text-[#64748b] leading-relaxed whitespace-pre-line">
-                {currentProduct.description || "High quality verified viral gadget with premium finish and durable built quality."}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  async function upload(files: FileList | null) {
+    if (!files) return; setBusy(true);
+    try { const form = new FormData(); for (const file of Array.from(files)) form.append("files", file);
+      const r = await fetch("/api/admin/upload", { method: "POST", body: form }); const data = await r.json(); if (!data.success) throw new Error(data.error);
+      setImages((old) => [old, ...data.urls].filter(Boolean).join("\n")); setMessage("Photos ready. Save the product to apply them.");
+    } catch (e) { setMessage(e instanceof Error ? e.message : "Upload failed"); } finally { setBusy(false); }
+  }
+  return <div className="max-w-4xl mx-auto p-6 space-y-5"><Link href="/admin/products" className="underline">Back to products</Link><h1 className="text-2xl font-bold">Edit product</h1>{message && <p role="status" className="p-3 border rounded-xl">{message}</p>}{!product ? <p>Load the product to edit its details.</p> : <form onSubmit={save} className="space-y-4 rounded-2xl bg-white border p-5">
+    <label className="block">Title<input required className="block w-full border rounded-lg p-2" value={product.title} onChange={(e) => setProduct({ ...product, title: e.target.value })} /></label>
+    <div className="grid sm:grid-cols-3 gap-3">{["price", "originalPrice", "stock"].map((key) => <label key={key}>{key}<input type="number" min={key === "stock" ? 0 : 0.01} step={key === "stock" ? 1 : 0.01} className="block w-full border rounded-lg p-2" value={product[key]} onChange={(e) => setProduct({ ...product, [key]: e.target.value })} /></label>)}</div>
+    <label className="block">Description, specifications, compatibility and warranty<textarea rows={8} className="block w-full border rounded-lg p-2" value={product.description || ""} onChange={(e) => setProduct({ ...product, description: e.target.value })} /></label>
+    <label className="block">Sizes (comma separated)<input className="block w-full border rounded-lg p-2" value={sizes} onChange={(e) => setSizes(e.target.value)} /></label>
+    <label className="block">Colours (comma separated)<input className="block w-full border rounded-lg p-2" value={colors} onChange={(e) => setColors(e.target.value)} /></label>
+    <label className="block">Product photo URLs (one per line; first is primary)<textarea rows={4} className="block w-full border rounded-lg p-2" value={images} onChange={(e) => setImages(e.target.value)} /></label>
+    <input aria-label="Upload product photos" type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={(e) => void upload(e.target.files)} />
+    <label className="block"><input type="checkbox" checked={product.isActive} onChange={(e) => setProduct({ ...product, isActive: e.target.checked })} /> Active in storefront</label>
+    <button disabled={busy} className="bg-emerald-700 text-white px-5 py-3 rounded-xl disabled:opacity-50">{busy ? "Saving…" : "Save product"}</button>
+  </form>}</div>;
 }

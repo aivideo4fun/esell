@@ -66,12 +66,12 @@ function ShopContent() {
 
   // Helper to safely extract image string URL
   const getProductImageString = (product: Product): string => {
-    const raw = product.images?.[0]?.url || product.images?.[0] || product.image || "/logo.png";
+    const raw = product.images?.[0]?.url || product.images?.[0] || product.image || "/product-placeholder.svg";
     if (typeof raw === "string" && raw.trim() !== "") return raw;
     if (typeof raw === "object" && raw !== null && "url" in raw && typeof (raw as any).url === "string") {
       return (raw as any).url;
     }
-    return "/logo.png";
+    return "/product-placeholder.svg";
   };
 
   useEffect(() => {
@@ -120,9 +120,9 @@ function ShopContent() {
       try {
         setLoading(true);
         const [prodRes, catRes, bannerRes] = await Promise.all([
-          fetch("/api/admin/products", { cache: "no-store" }),
-          fetch("/api/admin/categories", { cache: "no-store" }),
-          fetch("/api/admin/banners", { cache: "no-store" }),
+          fetch("/api/products", { cache: "no-store" }),
+          fetch("/api/storefront/categories", { cache: "no-store" }),
+          fetch("/api/storefront/banners", { cache: "no-store" }),
         ]);
 
         const prodData = await prodRes.json();
@@ -165,6 +165,7 @@ function ShopContent() {
   const handleUpdateCartQty = (product: Product, delta: number, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if ((product as any).sizes?.length || (product as any).colors?.length) { window.location.href = `/product/${product.slug || product.id}`; return; }
 
     try {
       const existing = localStorage.getItem("cb_cart");
@@ -176,7 +177,7 @@ function ShopContent() {
       const newQty = currentQty + delta;
 
       const imgUrl = getProductImageString(product);
-      const effOrigPrice = product.originalPrice && product.originalPrice > product.price ? product.originalPrice : Math.round(product.price * 1.35);
+      const effOrigPrice = product.originalPrice && product.originalPrice > product.price ? product.originalPrice : product.price;
 
       if (newQty > 0) {
         const stockAvailable = typeof product.stock === "number" ? product.stock : 10;
@@ -343,7 +344,7 @@ function ShopContent() {
 
               const effOrigPrice = product.originalPrice && product.originalPrice > product.price 
                 ? product.originalPrice 
-                : Math.round(product.price * 1.35);
+                : product.price;
               const discountPercent = Math.round(((effOrigPrice - product.price) / effOrigPrice) * 100);
 
               return (

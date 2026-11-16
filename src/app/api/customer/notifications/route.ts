@@ -1,3 +1,4 @@
+import { getCustomerId } from "@/lib/security/customer";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
@@ -5,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 export async function GET() {
   try {
     const cookieStore = await cookies();
-    const customerId = cookieStore.get("customer_id")?.value;
+    const customerId = await getCustomerId();
 
     if (!customerId) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
@@ -18,11 +19,13 @@ export async function GET() {
       take: 5,
     });
 
+    const broadcasts = await prisma.notification.findMany({ where: { isGlobal: true }, orderBy: { createdAt: "desc" }, take: 30 });
     const notifications = [
+      ...broadcasts.map((n) => ({ ...n, type: "ANNOUNCEMENT", read: false })),
       {
         id: "promo-welcome",
         title: "Welcome to CatchBuddy!",
-        message: "Enjoy flat ₹50 OFF on all prepaid orders directly at checkout.",
+        message: "Explore current offers and free prepaid delivery at checkout.",
         type: "PROMOTION",
         createdAt: new Date().toISOString(),
         read: false,

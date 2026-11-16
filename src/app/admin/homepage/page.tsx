@@ -16,46 +16,13 @@ export default function AdminHomepageManager() {
   const [savedMsg, setSavedMsg] = useState(false);
 
   useEffect(() => {
-    const savedBanner = localStorage.getItem("cb_admin_hero_banner");
-    if (savedBanner) {
-      try {
-        const b = JSON.parse(savedBanner);
-        setBadge(b.badge || "");
-        setHeadingMain(b.headingMain || "");
-        setHeadingHighlight(b.headingHighlight || "");
-        setSubtitle(b.subtitle || "");
-      } catch {}
-    }
-
-    const savedDeals = localStorage.getItem("cb_admin_deal_ids");
-    if (savedDeals) {
-      try {
-        const parsed = JSON.parse(savedDeals);
-        if (Array.isArray(parsed)) {
-          setDealIds(parsed);
-        }
-      } catch {}
-    }
-
-    fetch("/api/admin/products", { cache: "no-store" })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success && Array.isArray(data.products)) {
-          setProducts(data.products);
-          // If no deals saved yet, default first 5 or available products to slots
-          if (!savedDeals && data.products.length > 0) {
-            const defaults = [
-              data.products[0]?.id || "",
-              data.products[1]?.id || data.products[0]?.id || "",
-              data.products[2]?.id || data.products[0]?.id || "",
-              data.products[3]?.id || data.products[0]?.id || "",
-              data.products[4]?.id || data.products[0]?.id || "",
-            ];
-            setDealIds(defaults);
-          }
-        }
-      })
-      .catch((err) => console.error(err));
+    Promise.all([fetch("/api/admin/homepage").then((r) => r.json()), fetch("/api/admin/products").then((r) => r.json())])
+      .then(([settings, catalog]) => {
+        if (!settings.success || !catalog.success) throw new Error("Unable to load homepage settings");
+        const b = settings.config;
+        setBadge(b.badge); setHeadingMain(b.headingMain); setHeadingHighlight(b.headingHighlight); setSubtitle(b.subtitle);
+        setDealIds([...b.dealIds, "", "", "", "", ""].slice(0, 5)); setProducts(catalog.products.filter((p: any) => p.isActive));
+      }).catch((error) => alert(error.message));
   }, []);
 
   const handleDealChange = (index: number, val: string) => {
@@ -64,20 +31,13 @@ export default function AdminHomepageManager() {
     setDealIds(updated);
   };
 
-  const handleSaveSettings = (e: React.FormEvent) => {
-    e.preventDefault();
-    localStorage.setItem("cb_admin_hero_banner", JSON.stringify({
-      badge,
-      headingMain,
-      headingHighlight,
-      subtitle
-    }));
-    localStorage.setItem("cb_admin_deal_ids", JSON.stringify(dealIds));
-    
-    window.dispatchEvent(new Event("storage"));
-    
-    setSavedMsg(true);
-    setTimeout(() => setSavedMsg(false), 2500);
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault(); setSavedMsg(false);
+    try {
+      const response = await fetch("/api/admin/homepage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ badge, headingMain, headingHighlight, subtitle, dealIds }) });
+      const result = await response.json(); if (!result.success) throw new Error(result.error || "Unable to save");
+      setSavedMsg(true); setTimeout(() => setSavedMsg(false), 2500);
+    } catch (error) { alert(error instanceof Error ? error.message : "Unable to save"); }
   };
 
   return (

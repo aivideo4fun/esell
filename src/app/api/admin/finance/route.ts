@@ -22,9 +22,9 @@ export async function GET() {
       orderBy: { createdAt: "desc" },
     });
 
-    const totalRevenue = orders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
-    const paidOrders = orders.filter((o) => o.paymentStatus === "PAID" || o.orderStatus === "DELIVERED");
-    const netMargin = Math.round(totalRevenue * 0.28); // Standard e-commerce 28% margin estimate
+    const paidOrders = orders.filter((o) => ["SUCCESS", "PAID", "COMPLETED"].includes(o.paymentStatus));
+    const totalRevenue = paidOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+    const netMargin = null; // Product costs and operating expenses have not been supplied.
 
     // Live refunds data derived from CANCELLED/REFUNDED orders
     const refunds = orders
@@ -48,7 +48,7 @@ export async function GET() {
       stats: {
         grossGMV: totalRevenue,
         netMargin,
-        aov: orders.length > 0 ? Math.round(totalRevenue / orders.length) : 0,
+        aov: paidOrders.length > 0 ? Math.round(totalRevenue / paidOrders.length) : 0,
         paidOrdersCount: paidOrders.length,
         totalOrdersCount: orders.length,
       },
