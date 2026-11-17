@@ -26,16 +26,16 @@ export default function ProductCard({ product }: ProductCardProps) {
   const rawStock = Number(product.stock);
   const stockAvailable = !isNaN(rawStock) && rawStock >= 0 ? rawStock : 10;
   
-  // STRICT FALLBACK TO /logo.png IF NO IMAGE EXISTS
+  // STRICT FALLBACK TO /product-placeholder.svg IF NO IMAGE EXISTS
   const imgUrl =
     product.images?.[0]?.url ||
     product.images?.[0] ||
     product.image ||
-    "/logo.png";
+    "/product-placeholder.svg";
 
   const effectiveOriginalPrice = product.originalPrice && Number(product.originalPrice) > Number(product.price) 
     ? Number(product.originalPrice) 
-    : Math.round(Number(product.price) * 1.35);
+    : Number(product.price);
 
   const discountPercent = Math.round(((effectiveOriginalPrice - Number(product.price)) / effectiveOriginalPrice) * 100);
 

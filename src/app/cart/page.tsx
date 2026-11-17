@@ -110,7 +110,7 @@ export default function CartPage() {
     const codeInput = couponCode.trim().toUpperCase();
 
     try {
-      const res = await fetch("/api/admin/coupons", { cache: "no-store" });
+      const res = await fetch("/api/storefront/coupons", { cache: "no-store" });
       const data = await res.json();
 
       let matchedCoupon = null;
@@ -195,7 +195,7 @@ export default function CartPage() {
   };
 
   const isFreeShipping = couponApplied && discountType === "SHIPPING";
-  const shipping = (subtotal > 0 && !isFreeShipping) ? 60 : 0;
+  const shippingPreview = 0; // Final shipping comes from the server quote.
   
   let discountAmount = 0;
   if (couponApplied) {
@@ -206,10 +206,23 @@ export default function CartPage() {
     }
   }
 
-  const totalPayable = Math.max(0, subtotal + shipping - discountAmount);
+  const [serverQuote, setServerQuote] = useState<{ shipping: number; discount: number; total: number } | null>(null);
+  const [quoteError, setQuoteError] = useState("");
+  useEffect(() => {
+    let cancelled = false; setServerQuote(null); setQuoteError("");
+    if (!cart.length) return;
+    fetch("/api/checkout/quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: cart, couponCode: couponApplied ? appliedCouponName : "" }) })
+      .then((r) => r.json()).then((data) => { if (cancelled) return; if (data.success) setServerQuote(data); else setQuoteError(data.error || "Unable to calculate total"); })
+      .catch(() => { if (!cancelled) setQuoteError("Unable to calculate total"); });
+    return () => { cancelled = true; };
+  }, [cart, couponApplied, appliedCouponName]);
+  const shipping = serverQuote?.shipping ?? shippingPreview;
+  discountAmount = serverQuote?.discount ?? discountAmount;
+  const totalPayable = serverQuote?.total ?? Math.max(0, subtotal + shipping - discountAmount);
 
   const handleProceedToCheckout = () => {
     if (cart.length === 0) return;
+    if (quoteError) { alert(quoteError); return; }
     const userSession = localStorage.getItem("cb_user") || localStorage.getItem("user");
     if (!userSession) {
       router.push("/login?redirect=/checkout");
@@ -358,7 +371,7 @@ export default function CartPage() {
                 </div>
                 {couponApplied && discountType !== "SHIPPING" && discountAmount > 0 && (
                   <div className="flex justify-between text-emerald-700">
-                    <span>Discount ({appliedCouponName})</span>
+                    <span>Discount ({appliedCouponName || "Prepaid offer"})</span>
                     <span className="font-mono">-₹{discountAmount}</span>
                   </div>
                 )}

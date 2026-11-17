@@ -1,3 +1,4 @@
+import { cleanCatalogText } from "@/lib/catalog";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import * as XLSX from "xlsx";
@@ -13,6 +14,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "No file uploaded" }, { status: 400 });
     }
 
+    if (file.size > 5 * 1024 * 1024) return NextResponse.json({ success: false, error: "Spreadsheet must be under 5 MB" }, { status: 400 });
     const buffer = Buffer.from(await file.arrayBuffer());
     const workbook = XLSX.read(buffer, { type: "buffer" });
     const sheetName = workbook.SheetNames[0];
@@ -23,20 +25,24 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Uploaded file is empty" }, { status: 400 });
     }
 
+    if (rows.length > 10000) return NextResponse.json({ success: false, error: "Import at most 10,000 rows at once" }, { status: 400 });
+
     let importedCount = 0;
     let updatedCount = 0;
+    let skippedCount = 0;
 
     for (const row of rows) {
-      const title = row["Title"] || row["title"];
+      const title = cleanCatalogText(row["Title"] || row["title"]);
       if (!title) continue;
 
-      const categoryName = row["Product Category"] || row["Category"] || "General";
+      const categoryName = cleanCatalogText(row["Product Category"] || row["Category"] || "General");
       const sku = row["Variant SKU"] || row["SKU"] || `SKU-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       const price = parseFloat(row["Price"] || row["price"] || "0");
       // Original price ko thoda zyada set kar dete hain agar available na ho taaki discount dikh sake
-      const originalPrice = price > 0 ? Math.round(price * 1.3) : 0;
-      const stock = parseInt(row["Quantity"] || row["quantity"] || "100", 10);
-      const description = row["Body (HTML)"] || row["Description"] || "";
+      const originalPrice = Number(row["MRP"] || row["Original Price"] || row["Compare At Price"] || price);
+      const stock = Number(row["Quantity"] ?? row["quantity"] ?? 0);
+      if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(originalPrice) || originalPrice < price || !Number.isSafeInteger(stock) || stock < 0) { skippedCount++; continue; }
+      const description = cleanCatalogText(row["Body (HTML)"] || row["Description"] || "");
       const color = row["Color"] || "";
       const weight = row["Weight (gm)"] || "";
 
@@ -74,6 +80,13 @@ export async function POST(req: Request) {
         }
       }
 
+      for (const key of ["Image Src", "Image URL", "ImageUrl", "imageUrls", "imageUrl", "Images", "Main Image", "Photo"] ) {
+        const cell = row[key];
+        if (typeof cell === "string") for (const candidate of cell.split(/[|,\n]/)) {
+          const url = candidate.trim();
+          if (/^https?:\/\//.test(url) && !images.includes(url)) images.push(url);
+        }
+      }
       // Colors array
       const colorsList = color ? [color.trim()] : [];
 
@@ -94,13 +107,10 @@ export async function POST(req: Request) {
             stock,
             categoryId: category.id,
             colors: colorsList,
-            images: {
+            ...(images.length ? { images: {
               deleteMany: {},
-              create: images.map((url, idx) => ({
-                url,
-                isPrimary: idx === 0,
-              })),
-            },
+              create: images.map((url, idx) => ({ url, isPrimary: idx === 0 })),
+            } } : {}),
           },
         });
         updatedCount++;
@@ -131,7 +141,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
-      message: `Successfully imported ${importedCount} new products and updated ${updatedCount} products.`,
+      skippedCount,
+      message: `Skipped ${skippedCount} invalid rows. Successfully imported ${importedCount} new products and updated ${updatedCount} products.`,
     });
   } catch (error: any) {
     console.error("Bulk excel upload error:", error);

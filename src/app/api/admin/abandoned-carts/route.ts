@@ -82,3 +82,11 @@ export async function GET() {
     return NextResponse.json({ success: false, error: msg, carts: [] }, { status: 500 });
   }
 }
+export async function POST(req: Request) {
+  const { orderId } = await req.json();
+  if (typeof orderId !== "string") return NextResponse.json({ success: false, error: "Order ID required" }, { status: 400 });
+  const order = await prisma.order.findUnique({ where: { id: orderId }, select: { id: true, paymentStatus: true } });
+  if (!order || order.paymentStatus !== "PENDING") return NextResponse.json({ success: false, error: "Pending checkout not found" }, { status: 404 });
+  await prisma.activityLog.create({ data: { action: "REMINDER_DRAFT_OPENED", details: JSON.stringify({ orderId }) } });
+  return NextResponse.json({ success: true, message: "Draft opened; no message was sent by this server" });
+}

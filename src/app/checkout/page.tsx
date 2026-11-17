@@ -44,6 +44,8 @@ export default function CheckoutPage() {
   });
 
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
+  const [serverQuote, setServerQuote] = useState<{ subtotal: number; shipping: number; discount: number; total: number } | null>(null);
+  const [quoteError, setQuoteError] = useState("");
   const [paymentMode, setPaymentMode] = useState<"PREPAID" | "COD">("PREPAID");
 
   const [showCodModal, setShowCodModal] = useState(false);
@@ -133,8 +135,8 @@ export default function CheckoutPage() {
     });
   };
 
-  const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const shipping = subtotal > 0 ? 60 : 0;
+  const previewSubtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const shippingPreview = 0;
 
   const appliedCouponStr = typeof window !== "undefined" ? localStorage.getItem("cb_applied_coupon") : null;
   let discountAmount = 0;
@@ -147,9 +149,9 @@ export default function CheckoutPage() {
         couponName = cData.code;
         const val = Number(cData.value || 0);
         if (cData.type === "FLAT") {
-          discountAmount = Math.min(subtotal, val);
+          discountAmount = Math.min(previewSubtotal, val);
         } else if (cData.type === "PERCENT") {
-          discountAmount = Math.round((subtotal * val) / 100);
+          discountAmount = Math.round((previewSubtotal * val) / 100);
         }
       }
     } catch {
@@ -158,7 +160,23 @@ export default function CheckoutPage() {
     }
   }
 
-  const totalPayable = Math.max(0, subtotal + shipping - discountAmount);
+  const quoteCode = couponName;
+  useEffect(() => {
+    let cancelled = false;
+    setServerQuote(null);
+    setQuoteError("");
+    if (!cart.length) return;
+    fetch("/api/checkout/quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: cart, couponCode: quoteCode }) })
+      .then((r) => r.json()).then((data) => {
+        if (cancelled) return;
+        if (data.success) setServerQuote(data); else setQuoteError(data.error || "Unable to calculate total");
+      }).catch(() => { if (!cancelled) setQuoteError("Unable to calculate total. Please retry."); });
+    return () => { cancelled = true; };
+  }, [cart, quoteCode]);
+  const subtotal = serverQuote?.subtotal ?? previewSubtotal;
+  const shipping = serverQuote?.shipping ?? shippingPreview;
+  discountAmount = serverQuote?.discount ?? discountAmount;
+  const totalPayable = serverQuote?.total ?? Math.max(0, previewSubtotal - discountAmount);
 
   // Strictly use account/registered email for communications, avoiding address-form override leaking wrong email
   const finalCustomerEmail = registeredEmail || "";
@@ -204,6 +222,7 @@ export default function CheckoutPage() {
 
   const handlePlaceOrderClick = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!serverQuote || quoteError) { alert(quoteError || "Please wait for the order total."); return; }
     if (!formData.fullName || !formData.phone || !formData.street || !formData.pincode || !formData.city) {
       alert("Kripya saare delivery address fields bharein!");
       return;
@@ -222,7 +241,7 @@ export default function CheckoutPage() {
     } catch {}
 
     if (paymentMode === "COD") {
-      void setupRecaptchaAndSendOtp();
+      alert("Cash on Delivery is unavailable. Choose online payment.");
     } else {
       executeRazorpayPayment();
     }
@@ -231,6 +250,9 @@ export default function CheckoutPage() {
   const executeRazorpayPayment = async () => {
     setLoading(true);
     try {
+      const session = await fetch("/api/auth/customer");
+      if (session.status === 401) { router.push("/login"); return; }
+      if (!(window as any).Razorpay) throw new Error("Payment window is still loading. Please retry in a moment.");
       const res = await fetch("/api/orders/create-razorpay", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -251,7 +273,7 @@ export default function CheckoutPage() {
       }
 
       const options = {
-        key: orderData.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_live_123456789",
+        key: orderData.keyId,
         amount: orderData.amount,
         currency: "INR",
         name: "CatchBuddy",
@@ -478,7 +500,7 @@ export default function CheckoutPage() {
                 </div>
 
                 <div
-                  onClick={() => setPaymentMode("COD")}
+                  onClick={() => alert("Cash on Delivery is currently unavailable.")}
                   className={`p-4 rounded-2xl border-2 transition cursor-pointer flex items-center justify-between ${
                     paymentMode === "COD"
                       ? "border-emerald-600 bg-emerald-50/50"
@@ -489,7 +511,7 @@ export default function CheckoutPage() {
                     <Banknote className="w-5 h-5 text-amber-600" />
                     <div>
                       <p className="text-xs font-black text-slate-950">Cash on Delivery</p>
-                      <p className="text-[10px] text-slate-500">Requires OTP Verification</p>
+                      <p className="text-[10px] text-slate-500">Currently unavailable</p>
                     </div>
                   </div>
                   <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${paymentMode === "COD" ? "border-emerald-600 bg-emerald-600" : "border-slate-300"}`}>
@@ -533,7 +555,7 @@ export default function CheckoutPage() {
                 </div>
                 {discountAmount > 0 && (
                   <div className="flex justify-between text-emerald-700">
-                    <span>Discount ({couponName})</span>
+                    <span>Discount ({couponName || "Prepaid offer"})</span>
                     <span>-₹{discountAmount}</span>
                   </div>
                 )}
@@ -543,9 +565,10 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
+              {quoteError && <p role="alert" className="text-sm text-rose-700">{quoteError}</p>}
               <button
                 type="submit"
-                disabled={loading || isVerifyingCod}
+                disabled={loading || isVerifyingCod || !serverQuote || !!quoteError}
                 className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-2xl transition shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 {loading || isVerifyingCod ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}

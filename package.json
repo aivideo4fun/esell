@@ -25,16 +25,16 @@
     "firebase": "^12.18.0",
     "jose": "^6.2.12",
     "lucide-react": "^0.475.0",
-    "next": "^15.0.0",
+    "next": "^15.5.29",
     "razorpay": "^2.9.8",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind-merge": "^3.0.1",
-    "xlsx": "^0.18.5",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zustand": "^5.0.3"
   },
   "devDependencies": {
-    "@capacitor/assets": "^3.0.5",
+    "@capacitor/assets": "^4.0.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^20.0.0",
     "@types/react": "^19.0.0",
@@ -45,5 +45,11 @@
     "prisma": "^5.22.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.7.2"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "^8.5.28"
+    },
+    "@grpc/grpc-js": "^1.14.7"
   }
 }

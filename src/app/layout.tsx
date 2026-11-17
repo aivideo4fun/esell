@@ -1,3 +1,5 @@
+import { readConfig } from "@/lib/admin-config";
+import { seoDefaults } from "@/lib/seo-settings";
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
@@ -8,11 +10,12 @@ import { BackButtonHandler } from "@/components/BackButtonHandler";
 
 const inter = Inter({ subsets: ["latin"] });
 
-export const metadata: Metadata = {
-  title: "CatchBuddy | Smart Trending Gadgets & Lifestyle Store",
-  description:
-    "Shop premium trending gadgets, smart home tools with 100% verified quality & instant UPI prepaid discount.",
-};
+export const revalidate = 60;
+export async function generateMetadata(): Promise<Metadata> {
+  let seo = seoDefaults;
+  try { seo = await readConfig("SEO", seoDefaults); } catch { /* Public defaults remain available if the database is offline. */ }
+  return { title: seo.metaTitle, description: seo.metaDescription, keywords: seo.keywords, ...(seo.googleSiteVerification ? { verification: { google: seo.googleSiteVerification } } : {}) };
+}
 
 export default function RootLayout({
   children,

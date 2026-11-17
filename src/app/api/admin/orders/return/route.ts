@@ -1,3 +1,4 @@
+import { validateOrderTransition } from "@/lib/admin-validation";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
@@ -35,6 +36,8 @@ export async function POST(req: Request) {
         { status: 404 }
       );
     }
+
+    try { validateOrderTransition(order.orderStatus, "RETURN_REQUESTED", order.paymentStatus); } catch { return NextResponse.json({ success: false, error: "Return requests require a delivered order" }, { status: 409 }); }
 
     // Format return note into trackingUrl or notes safely
     const returnNote = `[RETURN_REQUESTED]: ${reason}${comments ? ` | Note: ${comments}` : ""} | Date: ${new Date().toLocaleDateString("en-IN")}`;

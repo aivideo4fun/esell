@@ -1,3 +1,4 @@
+import { formatProduct } from "@/lib/catalog";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
@@ -13,6 +14,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
         isActive: true,
       },
       include: {
+        reviews: { where: { status: "APPROVED" }, select: { rating: true } },
         images: {
           select: { url: true, isPrimary: true },
         },
@@ -26,7 +28,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
       return NextResponse.json({ success: false, error: "Product not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, product });
+    return NextResponse.json({ success: true, product: formatProduct(product) });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Error loading product";
     return NextResponse.json({ success: false, error: msg }, { status: 500 });

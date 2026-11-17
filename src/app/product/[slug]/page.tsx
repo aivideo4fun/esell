@@ -48,6 +48,8 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
   const [loading, setLoading] = useState(true);
   const [selectedImg, setSelectedImg] = useState<string>("");
   const [cartQuantity, setCartQuantity] = useState(0);
+  const [selectedSize, setSelectedSize] = useState("");
+  const [selectedColor, setSelectedColor] = useState("");
   const [isWishlisted, setIsWishlisted] = useState(false);
 
   // Reviews State
@@ -68,11 +70,12 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
         if (data.success && data.product) {
           const p = data.product;
           setProduct(p);
-          // Fallback to CatchBuddy logo (/logo.png) if no image exists
+          // Fallback to CatchBuddy logo (/product-placeholder.svg) if no image exists
           setSelectedImg(
+            p.images?.find((image: { url: string; isPrimary: boolean }) => image.isPrimary)?.url ||
             p.images?.[0]?.url ||
               p.images?.[0] ||
-              "/logo.png"
+              "/product-placeholder.svg"
           );
 
           const savedCart = JSON.parse(localStorage.getItem("cb_cart") || "[]");
@@ -107,6 +110,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
 
   const updateCartQuantity = (newQty: number, redirectCheckout = false) => {
     if (!product) return;
+    if (newQty > 0 && ((product.sizes.length > 0 && !selectedSize) || (product.colors.length > 0 && !selectedColor))) { alert("Please choose a size and colour where available."); return; }
 
     if (newQty < 0) newQty = 0;
     if (newQty > 9) {
@@ -114,7 +118,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
       return;
     }
 
-    const stockAvailable = product.stock || 10;
+    const stockAvailable = Math.max(0, product.stock ?? 0);
     if (newQty > stockAvailable) {
       alert(`Maaf kijiye, sirf ${stockAvailable} items inventory mein available hain.`);
       return;
@@ -139,10 +143,12 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
           originalPrice: product.originalPrice,
           image: selectedImg,
           quantity: newQty,
+          selectedSize: selectedSize || null,
+          selectedColor: selectedColor || null,
         };
 
         if (index > -1) {
-          cart[index].quantity = newQty;
+          cart[index] = cartItem;
         } else {
           cart.push(cartItem);
         }
@@ -204,7 +210,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
         setReviewerName("");
         setReviewComment("");
         setShowReviewForm(false);
-        alert("Aapka verified review successfully post ho gaya hai!");
+        alert("Aapka review successfully post ho gaya hai!");
       } else {
         alert(data.error || "Failed to submit review");
       }
@@ -236,7 +242,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
     );
   }
 
-  const discountPercent = product
+  const discountPercent = product.originalPrice > product.price
     ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
     : 0;
 
@@ -246,12 +252,12 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
 
       <main className="max-w-6xl mx-auto px-4 sm:px-8 mt-6 space-y-8">
         <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 shadow-xs">
-          
+
           {/* Product Gallery with Top-Right Wishlist Button */}
           <div className="lg:col-span-6 space-y-4">
             <div className="aspect-square bg-slate-50 rounded-3xl border border-slate-200 overflow-hidden relative flex items-center justify-center">
-              <img src={selectedImg} alt={product.title} className="w-full h-full object-contain p-4" />
-              
+              <img src={selectedImg} alt={product.title} onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.src = "/product-placeholder.svg"; }} className="w-full h-full object-contain p-4" />
+
               <button
                 type="button"
                 onClick={toggleWishlist}
@@ -269,6 +275,15 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
                 </span>
               )}
             </div>
+            {product.images?.length > 1 && (
+              <div className="flex gap-2 overflow-x-auto pb-2">
+                {product.images.map((image, index) => (
+                  <button key={`${image.url}-${index}`} type="button" onClick={() => setSelectedImg(image.url)} aria-label={`View product photo ${index + 1}`} aria-pressed={selectedImg === image.url} className={`w-16 h-16 shrink-0 rounded-xl border-2 overflow-hidden ${selectedImg === image.url ? "border-emerald-600" : "border-slate-200"}`}>
+                    <img src={image.url} alt={`${product.title} — photo ${index + 1}`} className="w-full h-full object-contain" />
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Product Details */}
@@ -284,10 +299,10 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
               <div className="flex items-center gap-2 mt-2">
                 <div className="flex items-center gap-1 bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-200 text-xs font-black text-emerald-800">
                   <Star className="w-3.5 h-3.5 fill-emerald-600 text-emerald-600" />
-                  <span>{product.rating || "4.8"}</span>
+                  <span>{reviews.length ? (reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length).toFixed(1) : "No ratings yet"}</span>
                 </div>
                 <span className="text-xs font-medium text-slate-500">
-                  ({reviews.length} verified customer reviews)
+                  ({reviews.length} customer reviews)
                 </span>
               </div>
             </div>
@@ -296,7 +311,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
             <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
               <div className="flex items-baseline gap-2">
                 <span className="text-2xl font-black text-slate-950">₹{product.price}</span>
-                <span className="text-sm line-through text-slate-400">₹{product.originalPrice}</span>
+                {product.originalPrice > product.price && <span className="text-sm line-through text-slate-400">₹{product.originalPrice}</span>}
                 {discountPercent > 0 && (
                   <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">
                     {discountPercent}% OFF
@@ -304,19 +319,24 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
                 )}
               </div>
               <p className="text-[11px] font-bold text-emerald-700">
-                Inclusive of all taxes • Free Delivery only on Prepaid Orders
+                Inclusive of all taxes • Delivery and prepaid discounts calculated at checkout
               </p>
             </div>
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {product.sizes.length > 0 && <label className="text-sm font-semibold">Size<select aria-label="Size" value={selectedSize} onChange={(e) => { setSelectedSize(e.target.value); setCartQuantity(0); }} className="block w-full border rounded-xl p-3 mt-1"><option value="">Choose size</option>{product.sizes.map((size) => <option key={size}>{size}</option>)}</select></label>}
+              {product.colors.length > 0 && <label className="text-sm font-semibold">Colour<select aria-label="Colour" value={selectedColor} onChange={(e) => { setSelectedColor(e.target.value); setCartQuantity(0); }} className="block w-full border rounded-xl p-3 mt-1"><option value="">Choose colour</option>{product.colors.map((color) => <option key={color}>{color}</option>)}</select></label>}
+            </div>
             {/* Desktop Seamless Cart Counter */}
             <div className="space-y-3 pt-2">
               <div className="hidden md:flex items-center gap-3">
                 {cartQuantity === 0 ? (
                   <button
+                    disabled={product.stock <= 0}
                     onClick={() => updateCartQuantity(1)}
                     className="flex-1 py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl text-xs font-black transition cursor-pointer flex items-center justify-center gap-2 shadow-md"
                   >
-                    <ShoppingBag className="w-4 h-4" /> Add to Cart
+                    <ShoppingBag className="w-4 h-4" /> {product.stock > 0 ? "Add to Cart" : "Out of stock"}
                   </button>
                 ) : (
                   <div className="flex-1 flex items-center justify-between bg-slate-100 border border-slate-300 rounded-2xl p-1.5 shadow-inner">
@@ -342,6 +362,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
                 )}
 
                 <button
+                  disabled={product.stock <= 0}
                   onClick={() => {
                     if (cartQuantity === 0) updateCartQuantity(1, true);
                     else router.push("/checkout");
@@ -353,6 +374,19 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
               </div>
             </div>
 
+            <div className="text-xs text-slate-600 space-y-2">
+              <p><Link href="/shipping-policy" className="underline">Shipping and delivery details</Link></p>
+              <p><Link href="/return-policy" className="underline">Return eligibility, charges and refund timelines</Link></p>
+              {!product.description?.trim() && <p>Detailed specifications are not available yet. <Link href="/contact" className="underline">Contact support</Link> to confirm compatibility and warranty before ordering.</p>}
+            </div>
+            <section className="rounded-2xl border border-slate-200 p-4 text-sm space-y-3">
+              <h2 className="font-bold">Product information &amp; returns</h2>
+              <p><strong>Compatibility &amp; specifications:</strong> Refer to the seller description below. If your model or required specification is not listed, confirm it with support before ordering.</p>
+              <p><strong>Warranty:</strong> Only a warranty explicitly stated in the product description applies. Contact support if it is not specified.</p>
+              <p><strong>Return requests:</strong> Raise eligible requests within 5 days of delivery. Hygiene categories have restrictions; damaged, defective and incorrect items can be reported.</p>
+              <p><strong>Return charges:</strong> Vary by item, location and reason; a fixed fee has not been supplied for this product. Ask support for a quote before purchase. Applicable charges are confirmed before return approval.</p>
+              <Link href="/return-policy" className="text-emerald-700 underline">Read the complete return and refund policy</Link>
+            </section>
             {/* Product Description */}
             {product.description && (
               <div className="space-y-2 pt-2 border-t border-slate-100">
@@ -365,10 +399,10 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
           </div>
         </div>
 
-        {/* Verified Customer Reviews Section */}
+        {/* Customer Reviews Section */}
         <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 space-y-6 shadow-xs">
           <div className="border-b border-slate-100 pb-4 flex items-center justify-between">
-            <h2 className="text-sm font-black text-slate-950 uppercase tracking-wider">Verified Customer Reviews</h2>
+            <h2 className="text-sm font-black text-slate-950 uppercase tracking-wider">Customer Reviews</h2>
             <button
               onClick={() => setShowReviewForm(!showReviewForm)}
               className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-black transition flex items-center gap-1.5 cursor-pointer"
@@ -379,7 +413,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
 
           {showReviewForm && (
             <form onSubmit={handleReviewSubmit} className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
-              <h3 className="text-xs font-black text-slate-950">Submit Verified Buyer Review</h3>
+              <h3 className="text-xs font-black text-slate-950">Submit Your Review</h3>
               <div>
                 <label className="text-[11px] font-bold text-slate-700 block mb-1">Your Name *</label>
                 <input
@@ -428,13 +462,13 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
 
           <div className="space-y-3">
             {reviews.length === 0 ? (
-              <p className="text-xs text-slate-400 font-medium">No reviews yet. Be the first verified buyer to review!</p>
+              <p className="text-xs text-slate-400 font-medium">No reviews yet. Be the first to review!</p>
             ) : (
               reviews.map((rev, idx) => (
                 <div key={idx} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-slate-950">{rev.userName || rev.name}</span>
-                    <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md font-bold">Verified Buyer</span>
+                    <span className="text-xs font-black text-slate-950">{rev.customerName || rev.userName || rev.name}</span>
+
                   </div>
                   <div className="flex items-center gap-1 text-amber-500">
                     {Array.from({ length: rev.rating || 5 }).map((_, i) => (
@@ -464,10 +498,11 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
 
         {cartQuantity === 0 ? (
           <button
+            disabled={product.stock <= 0}
             onClick={() => updateCartQuantity(1)}
             className="flex-1 py-3 bg-slate-900 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
           >
-            <ShoppingBag className="w-4 h-4" /> Add to Cart
+            <ShoppingBag className="w-4 h-4" /> {product.stock > 0 ? "Add to Cart" : "Out of stock"}
           </button>
         ) : (
           <div className="flex-1 flex items-center justify-between bg-slate-100 border border-slate-300 rounded-xl px-2 py-1.5">
@@ -491,6 +526,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
         )}
 
         <button
+          disabled={product.stock <= 0}
           onClick={() => {
             if (cartQuantity === 0) updateCartQuantity(1, true);
             else router.push("/checkout");

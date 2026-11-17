@@ -39,16 +39,15 @@ export default function AdminFinanceRefundsPage() {
   }, [fetchRealRefunds]);
 
   const handleProcessRefund = async (record: RefundRecord) => {
-    if (!confirm(`Release refund of ₹${record.amount} for Order ${record.orderId}?`)) {
-      return;
-    }
+    const refundId = prompt(`Enter the processed Razorpay refund ID (rfnd_...) for ${record.orderId}. This verifies an existing refund; it does not transfer money.`);
+    if (!refundId) return;
 
     try {
       setProcessingId(record.id);
       const res = await fetch("/api/admin/finance-refunds", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderDbId: record.orderDbId }),
+        body: JSON.stringify({ orderDbId: record.orderDbId, refundId: refundId.trim() }),
       });
 
       const data = await res.json();
@@ -56,7 +55,7 @@ export default function AdminFinanceRefundsPage() {
         setRefunds((prev) =>
           prev.map((r) => (r.id === record.id ? { ...r, status: "COMPLETED" } : r))
         );
-        alert("Refund released successfully!");
+        alert("Gateway refund verified and recorded.");
       } else {
         alert(data.error || "Failed to release refund");
       }
@@ -74,7 +73,7 @@ export default function AdminFinanceRefundsPage() {
           <RotateCcw className="w-6 h-6 text-emerald-600" /> Gateway Refunds &amp; Reversals
         </h1>
         <p className="text-xs text-slate-500 font-semibold mt-0.5">
-          Process customer refunds back to source bank accounts via payment gateway APIs.
+          Verify and record full refunds already processed in Razorpay. This screen does not initiate a money transfer.
         </p>
       </div>
 
@@ -132,7 +131,7 @@ export default function AdminFinanceRefundsPage() {
                         className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[11px] cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
                       >
                         {processingId === r.id && <Loader2 className="w-3 h-3 animate-spin" />}
-                        Release Refund
+                        Verify Refund
                       </button>
                     )}
                   </td>

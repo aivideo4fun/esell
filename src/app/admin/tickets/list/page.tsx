@@ -28,7 +28,7 @@ export default function AdminTicketsListPage() {
   const fetchRealTickets = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/support/tickets?role=admin", { cache: "no-store" });
+      const res = await fetch("/api/admin/tickets", { cache: "no-store" });
       const data = await res.json();
       if (data.success && Array.isArray(data.tickets)) {
         setTickets(data.tickets);
@@ -47,7 +47,7 @@ export default function AdminTicketsListPage() {
   const handleResolve = async (ticketId: string) => {
     try {
       setResolvingId(ticketId);
-      const res = await fetch("/api/support/tickets", {
+      const res = await fetch("/api/admin/tickets", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ticketId, status: "RESOLVED" }),

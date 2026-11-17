@@ -1,0 +1,37 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript');
+function load(file,mocks={}){const m={exports:{}};const code=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;vm.runInNewContext(code,{module:m,exports:m.exports,process,Buffer,URL,Request,Date,require:(id)=>id in mocks?mocks[id]:require(id)});return m.exports;}
+const next={NextResponse:{json:(body,options)=>({body,status:options?.status||200})}};
+(async()=>{
+ const catalog=load('src/lib/catalog.ts');const validation=load('src/lib/admin-validation.ts',{'@/lib/catalog':catalog});
+ for(const stock of [-1,1.5,'oops'])assert.throws(()=>validation.productInput({title:'Remote',price:482,stock}));
+ assert.equal(validation.productInput({title:'Remote',price:'482',stock:0,sizes:['M','M']}).stock,0);
+ assert.throws(()=>validation.productInput({title:'Remote',price:0}));
+ assert.throws(()=>validation.productInput({title:'Remote',price:482,imageUrls:['javascript:alert(1)']}));
+ assert.throws(()=>validation.validateOrderTransition('PENDING','SHIPPED','PENDING'));
+ validation.validateOrderTransition('PROCESSING','SHIPPED','SUCCESS');
+ validation.validateOrderTransition('RETURN_APPROVED','RETURN_PICKUP','SUCCESS');
+ assert.throws(()=>validation.validateOrderTransition('DELIVERED','REFUNDED','SUCCESS'));
+ assert.equal(validation.csvCell('=HYPERLINK("bad")').startsWith('"\''),true);
+ console.log('PASS product/stock validation, safe photo URLs, order transitions and CSV formula protection');
+ let entries=[];
+ const prisma={activityLog:{findFirst:async({where})=>[...entries].reverse().find(e=>e.action===where.action)||null,create:async({data})=>{entries.push(data);return data}}};
+ const config=load('src/lib/admin-config.ts',{'@/lib/prisma':{prisma}});
+ await config.writeConfig('HOMEPAGE',{headingMain:'Saved for all visitors'});
+ const anotherWorker=load('src/lib/admin-config.ts',{'@/lib/prisma':{prisma}});
+ assert.equal((await anotherWorker.readConfig('HOMEPAGE',{})).headingMain,'Saved for all visitors');
+ const shipping=load('src/app/api/admin/shipping/route.ts',{'next/server':next,'@/lib/store-settings':{getStoreSettings:async()=>({freeShippingThreshold:0,standardDeliveryFee:0,prepaidDiscount:0,enablePrepaidDiscount:false})},'@/lib/admin-config':config,'@/lib/admin-validation':validation});
+ assert.equal((await shipping.POST({json:async()=>({freeDeliveryMinOrder:500,standardDeliveryFee:60,prepaidDiscount:25})})).status,200);
+ const saved=await config.readConfig('STORE',{});assert.equal(saved.standardDeliveryFee,60);assert.equal(saved.enablePrepaidDiscount,true);
+ assert.equal((await shipping.POST({json:async()=>({freeDeliveryMinOrder:500,standardDeliveryFee:-1,prepaidDiscount:25})})).status,400);
+ console.log('PASS persisted configuration across module reloads and shipping rules validation');
+ let patched;
+ const tickets=load('src/app/api/admin/tickets/route.ts',{'next/server':next,'@/lib/admin-validation':validation,'@/lib/prisma':{prisma:{supportTicket:{update:async(args)=>{patched=args;return args.data}}}}});
+ assert.equal((await tickets.PATCH({json:async()=>({ticketId:'ticket-1',status:'RESOLVED'})})).status,200);assert.equal(patched.where.id,'ticket-1');
+ assert.equal((await tickets.PATCH({json:async()=>({id:'ticket-1',status:'FORGED'})})).status,400);
+ console.log('PASS support ticket ID compatibility and status validation');
+ const payments=load('src/app/api/admin/payments/route.ts',{'next/server':next,'@/lib/prisma':{prisma:{}}});
+ assert.equal((await payments.PATCH()).status,409);
+ const refunds=load('src/app/api/admin/finance-refunds/route.ts',{'next/server':next,'razorpay':{default:class{}},'@/lib/prisma':{prisma:{}}});
+ assert.equal((await refunds.POST({json:async()=>({orderDbId:'order-1'})})).status,400);
+ console.log('PASS manual payment success override rejected and refund proof required');
+})().catch(e=>{console.error(e);process.exitCode=1});

@@ -1,3 +1,5 @@
+import BusinessIdentity from "@/components/BusinessIdentity";
+import Link from "next/link";
 import { ShieldCheck } from "lucide-react";
 
 export default function TermsPage() {
@@ -7,6 +9,8 @@ export default function TermsPage() {
         <h1 className="text-3xl font-black text-gray-950">Terms of Service</h1>
         <p className="text-sm text-gray-600 mt-1">Rules and guidelines for using CatchBuddy</p>
       </div>
+
+      <BusinessIdentity />
 
       <div className="bg-white p-6 sm:p-8 rounded-3xl border border-gray-200 space-y-6 text-sm text-gray-700 leading-relaxed">
         <div className="flex items-center gap-2 mb-6 pb-6 border-b border-gray-100">
@@ -25,7 +29,7 @@ export default function TermsPage() {
         <div>
           <h2 className="font-bold text-base text-gray-950 mb-2">2. Returns & Refunds</h2>
           <p>
-            Refunds and replacements are strictly governed by our Return & Replacement Policy. A 5-day replacement window applies to defective or damaged products provided valid proof (unboxing video) is submitted.
+            Return requests must be raised within 5 days of delivery. Please read our <Link href="/return-policy" className="underline text-emerald-700">Return &amp; Refund Policy</Link> for eligible reasons, exclusions, charges and refund timelines.
           </p>
         </div>
 

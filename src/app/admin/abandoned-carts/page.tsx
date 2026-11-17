@@ -89,7 +89,7 @@ export default function AbandonedCartsPage() {
             <ShoppingCart className="w-7 h-7 text-emerald-600" /> Abandoned Carts Recovery
           </h1>
           <p className="text-xs text-slate-500 font-semibold mt-1">
-            Recover lost checkouts by sending automated reminder coupons and WhatsApp alerts.
+            Open a WhatsApp reminder draft for manual review and sending. This screen does not send messages automatically.
           </p>
         </div>
         <button
@@ -148,7 +148,7 @@ export default function AbandonedCartsPage() {
                   <td className="p-4 text-right">
                     {c.isReminded ? (
                       <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold border border-slate-200">
-                        <Check className="w-3.5 h-3.5 text-emerald-600" /> Reminder Sent
+                        <Check className="w-3.5 h-3.5 text-emerald-600" /> Draft Opened
                       </span>
                     ) : (
                       <button

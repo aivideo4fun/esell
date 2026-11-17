@@ -1,6 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
+import { storeInfo } from "@/lib/store-info";
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { Printer, ArrowLeft, Loader2, ShieldCheck } from "lucide-react";
@@ -46,6 +47,7 @@ export default function GSTInvoicePage() {
   const orderId = decodeURIComponent(rawId).trim();
 
   const [order, setOrder] = useState<any>(null);
+  const [sellerAddress, setSellerAddress] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -62,6 +64,7 @@ export default function GSTInvoicePage() {
 
         if (data.success && data.order) {
           setOrder(data.order);
+          setSellerAddress(data.seller?.registeredAddress || "");
         } else {
           // Fallback check
           const fallbackRes = await fetch(`/api/orders?orderId=${encodeURIComponent(orderId)}`);
@@ -221,13 +224,14 @@ export default function GSTInvoicePage() {
               Catch<span className="text-emerald-600">Buddy</span>
             </span>
             <p className="text-[11px] text-slate-600 font-semibold mt-1">
-              CatchBuddy Retail &amp; Logistics Logistics Pvt. Ltd.
+              {storeInfo.tradeName} • Proprietor: {storeInfo.legalName}
             </p>
             <p className="text-[11px] text-slate-500">
-              Warehouse Hub, Industrial Area, Phase 2, Nagaur, Rajasthan - 341512
+              {sellerAddress}
             </p>
             <p className="text-[11px] font-bold text-slate-800 mt-0.5">
-              GSTIN: <span className="font-mono">08AAACB1206M1Z4</span> • State Code: 08 (Rajasthan)
+              GSTIN: <span className="font-mono">{storeInfo.gstin}</span> • State Code: 08 (Rajasthan)
+              <br />{storeInfo.supportEmail} • {storeInfo.supportPhone}
             </p>
           </div>
 

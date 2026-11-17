@@ -1,120 +1,24 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-
+import { textField } from "@/lib/admin-validation";
 export const dynamic = "force-dynamic";
-
-// 1. GET: Fetch all pages (agar database khali hai toh default pages seed kar dega)
+const reserved = new Set(["admin", "api", "shop", "cart", "checkout", "contact", "terms", "privacy", "return-policy", "shipping-policy", "login", "orders", "account", "blog", "faq", "wishlist", "product"]);
 export async function GET() {
-  try {
-    let pages = await (prisma as any).staticPage.findMany({
-      orderBy: { createdAt: "asc" },
-    });
-
-    // Default Seed agar koi page na ho
-    if (pages.length === 0) {
-      const defaultPages = [
-        {
-          title: "About Us",
-          slug: "about",
-          content: "Welcome to CatchBuddy! We bring you the most trending and innovative smart gadgets direct to your doorstep with guaranteed verified quality.",
-          status: "ACTIVE",
-        },
-        {
-          title: "Terms & Conditions",
-          slug: "terms",
-          content: "By placing an order on CatchBuddy, you agree to our verified dispatch and payment security terms. All prepaid UPI payments receive special instant discounts.",
-          status: "ACTIVE",
-        },
-        {
-          title: "Privacy Policy",
-          slug: "privacy",
-          content: "Your privacy is our priority. CatchBuddy uses 256-bit SSL encrypted checkouts and does not share your phone number or shipping details with unauthorized third parties.",
-          status: "ACTIVE",
-        },
-        {
-          title: "Shipping & Return Policy",
-          slug: "shipping-policy",
-          content: "We provide Free Express Delivery across India within 24-48 hours of order confirmation. Returns and replacements are covered by our 5-Day Hassle-Free Replacement Policy.",
-          status: "ACTIVE",
-        },
-      ];
-
-      for (const p of defaultPages) {
-        await (prisma as any).staticPage.create({ data: p });
-      }
-
-      pages = await (prisma as any).staticPage.findMany({
-        orderBy: { createdAt: "asc" },
-      });
-    }
-
-    return NextResponse.json({ success: true, pages });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Failed to load pages";
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
-  }
+  const pages = await prisma.staticPage.findMany({ orderBy: { createdAt: "desc" } });
+  return NextResponse.json({ success: true, pages });
 }
-
-// 2. POST: Create or Update Page
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { id, title, slug, content, status } = body;
-
-    if (!title || !slug) {
-      return NextResponse.json({ success: false, error: "Title and slug are required" }, { status: 400 });
-    }
-
-    const cleanSlug = slug.replace(/^\/+/, "").trim().toLowerCase();
-
-    if (id) {
-      // UPDATE
-      const updated = await (prisma as any).staticPage.update({
-        where: { id },
-        data: {
-          title: title.trim(),
-          slug: cleanSlug,
-          content: content || "",
-          status: status || "ACTIVE",
-        },
-      });
-      return NextResponse.json({ success: true, page: updated });
-    }
-
-    // CREATE NEW
-    const created = await (prisma as any).staticPage.create({
-      data: {
-        title: title.trim(),
-        slug: cleanSlug,
-        content: content || "",
-        status: status || "ACTIVE",
-      },
-    });
-
-    return NextResponse.json({ success: true, page: created });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Failed to save page";
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
-  }
+    const b = await req.json(); const slug = textField(b.slug, "slug", 150).replace(/^\/+|\/+$/g, "").toLowerCase();
+    if (!/^[a-z0-9-]+$/.test(slug) || reserved.has(slug)) throw new Error("Choose a new page slug, such as about-us; built-in policy pages are maintained in code");
+    if (!["ACTIVE", "DRAFT"].includes(b.status || "ACTIVE")) throw new Error("Invalid page status");
+    const data = { title: textField(b.title, "title"), slug, content: textField(b.content || "", "content", 100000, true), status: b.status || "ACTIVE" };
+    const page = b.id ? await prisma.staticPage.update({ where: { id: b.id }, data }) : await prisma.staticPage.create({ data });
+    return NextResponse.json({ success: true, page });
+  } catch (e) { return NextResponse.json({ success: false, error: e instanceof Error ? e.message : "Page save failed" }, { status: 400 }); }
 }
-
-// 3. DELETE: Delete Page
 export async function DELETE(req: Request) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const id = searchParams.get("id");
-
-    if (!id) {
-      return NextResponse.json({ success: false, error: "Page ID required" }, { status: 400 });
-    }
-
-    await (prisma as any).staticPage.delete({
-      where: { id },
-    });
-
-    return NextResponse.json({ success: true, message: "Page deleted" });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Failed to delete page";
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
-  }
+  const id = new URL(req.url).searchParams.get("id"); if (!id) return NextResponse.json({ success: false }, { status: 400 });
+  await prisma.staticPage.update({ where: { id }, data: { status: "DRAFT" } });
+  return NextResponse.json({ success: true, message: "Page unpublished; content retained" });
 }

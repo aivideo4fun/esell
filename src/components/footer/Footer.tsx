@@ -1,5 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { footerDefaults } from "@/lib/footer-defaults";
+import BusinessIdentity from "@/components/BusinessIdentity";
+import { storeInfo } from "@/lib/store-info";
 import Image from "next/image";
 import Link from "next/link";
 import { 
@@ -13,6 +17,8 @@ import {
 } from "lucide-react";
 
 export default function Footer() {
+  const [config, setConfig] = useState(footerDefaults);
+  useEffect(() => { fetch("/api/footer").then((r) => r.json()).then((d) => { if (d.success) setConfig(d.footer); }).catch(() => {}); }, []);
   return (
     <footer className="bg-slate-900 text-slate-300 pt-10 pb-24 md:pb-12 mt-12 border-t border-slate-800 font-sans">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -35,7 +41,7 @@ export default function Footer() {
             </div>
             <div>
               <p className="text-xs font-black text-white">Easy Returns</p>
-              <p className="text-[11px] text-slate-400">Hassle-free replacement</p>
+              <p className="text-[11px] text-slate-400">See return eligibility</p>
             </div>
           </div>
 
@@ -79,8 +85,9 @@ export default function Footer() {
               </span>
             </Link>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Your go-to store for trending utilities, smart gadgets, and everyday essentials at unbeatable direct-to-consumer prices.
+              {config.aboutText}
             </p>
+            <div className="flex flex-wrap gap-3 text-xs">{config.shopLinks.map((link) => <Link key={link.url} href={link.url} className="underline">{link.title}</Link>)}</div>
           </div>
 
           {/* Customer Support */}
@@ -88,28 +95,7 @@ export default function Footer() {
             <h4 className="text-xs font-black uppercase tracking-wider text-white">
               Customer Support
             </h4>
-            <ul className="space-y-2 text-xs font-medium">
-              <li>
-                <Link href="/account" className="hover:text-emerald-400 transition">
-                  Help Desk &amp; Tickets
-                </Link>
-              </li>
-              <li>
-                <Link href="/orders/track" className="hover:text-emerald-400 transition">
-                  Track Your Order
-                </Link>
-              </li>
-              <li>
-                <Link href="/faq" className="hover:text-emerald-400 transition">
-                  Frequently Asked Questions (FAQs)
-                </Link>
-              </li>
-              <li>
-                <Link href="/contact" className="hover:text-emerald-400 transition">
-                  Contact Us
-                </Link>
-              </li>
-            </ul>
+            <ul className="space-y-2 text-xs font-medium">{config.customerLinks.map((link) => <li key={link.url}><Link href={link.url} className="hover:text-emerald-400">{link.title}</Link></li>)}</ul>
           </div>
 
           {/* Policies & Guarantees */}
@@ -117,28 +103,7 @@ export default function Footer() {
             <h4 className="text-xs font-black uppercase tracking-wider text-white">
               Policies
             </h4>
-            <ul className="space-y-2 text-xs font-medium">
-              <li>
-                <Link href="/return-policy" className="hover:text-emerald-400 transition">
-                  Return &amp; Refund Policy
-                </Link>
-              </li>
-              <li>
-                <Link href="/shipping-policy" className="hover:text-emerald-400 transition">
-                  Shipping &amp; Delivery Policy
-                </Link>
-              </li>
-              <li>
-                <Link href="/terms" className="hover:text-emerald-400 transition">
-                  Terms &amp; Conditions
-                </Link>
-              </li>
-              <li>
-                <Link href="/privacy" className="hover:text-emerald-400 transition">
-                  Privacy Policy
-                </Link>
-              </li>
-            </ul>
+            <ul className="space-y-2 text-xs font-medium">{config.bottomLinks.map((link) => <li key={link.url}><Link href={link.url} className="hover:text-emerald-400">{link.title}</Link></li>)}</ul>
           </div>
 
           {/* Contact Direct */}
@@ -149,25 +114,27 @@ export default function Footer() {
             <div className="space-y-2 text-xs text-slate-400">
               <p className="flex items-center gap-2">
                 <Mail className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>support@catchbuddy.in</span>
+                <a href={`mailto:${storeInfo.supportEmail}`}>{storeInfo.supportEmail}</a>
               </p>
               <p className="flex items-center gap-2">
                 <Phone className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>+91 7976152206 (10 AM - 7 PM)</span>
+                <a href={storeInfo.supportPhoneHref}>{storeInfo.supportPhone}</a>
               </p>
               <p className="text-[11px] text-slate-500 pt-1">
-                Rajasthan, India • Mon - Sat
+                Rajasthan, India • {storeInfo.supportHours}
               </p>
             </div>
           </div>
         </div>
 
+        <BusinessIdentity />
+
         {/* Bottom Copyright */}
         <div className="pt-6 border-t border-slate-800 text-center text-[11px] text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p>© {new Date().getFullYear()} CatchBuddy. All rights reserved.</p>
+          <p>{config.copyrightText}</p>
           <div className="flex items-center gap-2 text-emerald-400 font-bold">
             <ShieldCheck className="w-4 h-4" />
-            <span>Verified Merchant Store</span>
+            <span>CatchBuddy Store</span>
           </div>
         </div>
 

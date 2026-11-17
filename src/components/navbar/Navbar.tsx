@@ -149,9 +149,9 @@ export default function Navbar() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     localStorage.removeItem("cb_customer");
-    document.cookie = "customer_id=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;";
+    await fetch("/api/auth/customer", { method: "DELETE" });
     setCustomer(null);
     setDropdownOpen(false);
     window.dispatchEvent(new Event("customer-auth-changed"));

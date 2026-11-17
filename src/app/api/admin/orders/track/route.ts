@@ -83,13 +83,13 @@ export async function GET(request: Request) {
         customerName: order.address?.fullName || "CatchBuddy Shopper",
         customerPhone: order.address?.phone || "N/A",
         address: fullAddress,
-        courierName: (order as any).courierName || "CatchBuddy Express Logistics",
-        trackingNumber: (order as any).trackingNumber || `CB-${order.id.slice(-6).toUpperCase()}`,
+        courierName: (order as any).courierName || "Not assigned",
+        trackingNumber: (order as any).trackingNumber || null,
         items: order.items.map((item: any) => {
           const img =
             item.product?.images?.[0]?.url ||
             item.image ||
-            "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=400&q=80";
+            "/product-placeholder.svg";
           return {
             title: item.product?.title || item.title || item.name || "CatchBuddy Product",
             quantity: item.quantity,

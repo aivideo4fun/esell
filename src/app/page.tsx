@@ -63,40 +63,12 @@ export default function HomePage() {
     badge: "LIMITED TIME OFFER",
     headingMain: "Premium Gadgets,",
     headingHighlight: "Direct to Your Doorstep.",
-    subtitle: "100% Verified Products • Instant Prepaid Discounts • Free Shipping"
+    subtitle: "Smart Everyday Essentials • Prepaid Offers • Free Shipping on Prepaid Orders"
   });
 
   // Deal of the Day Sliding State
   const [dealProductsList, setDealProductsList] = useState<ProductItem[]>([]);
   const [currentDealIndex, setCurrentDealIndex] = useState(0);
-
-  const loadAdminSettingsAndProducts = (mappedProducts: ProductItem[]) => {
-    try {
-      const savedBanner = localStorage.getItem("cb_admin_hero_banner");
-      if (savedBanner) {
-        setHeroBanner(JSON.parse(savedBanner));
-      }
-
-      const savedDealsJSON = localStorage.getItem("cb_admin_deal_ids");
-      if (savedDealsJSON && mappedProducts.length > 0) {
-        const dealIds: string[] = JSON.parse(savedDealsJSON);
-        const matchedDeals = dealIds
-          .map((id) => mappedProducts.find((p) => p.id === id))
-          .filter(Boolean) as ProductItem[];
-
-        if (matchedDeals.length > 0) {
-          setDealProductsList(matchedDeals);
-          return;
-        }
-      }
-      if (mappedProducts.length > 0) {
-        setDealProductsList(mappedProducts.slice(0, 5));
-      }
-    } catch (e) {
-      console.error(e);
-      if (mappedProducts.length > 0) setDealProductsList(mappedProducts.slice(0, 5));
-    }
-  };
 
   useEffect(() => {
     const syncState = () => {
@@ -131,34 +103,38 @@ export default function HomePage() {
       try {
         const [homeRes, couponRes] = await Promise.all([
           fetch("/api/storefront/home", { cache: "no-store" }),
-          fetch("/api/admin/coupons", { cache: "no-store" })
+          fetch("/api/storefront/coupons", { cache: "no-store" })
         ]);
 
         const data = await homeRes.json();
         if (data.success) {
+          if (data.homepage) {
+            setHeroBanner(data.homepage);
+            setDealProductsList(data.dealProducts || []);
+          }
           if (data.categories?.length > 0) {
             setCategories(data.categories);
           }
           if (data.products?.length > 0) {
             const mappedProducts = data.products.map((p: any) => {
               const rawImg = p.image || p.images?.[0]?.url || p.images?.[0] || "";
-              const finalImg = rawImg && rawImg.trim() !== "" && !rawImg.includes("unsplash.com") ? rawImg : "/logo.png";
+              const finalImg = rawImg && rawImg.trim() !== "" && !rawImg.includes("unsplash.com") ? rawImg : "/product-placeholder.svg";
 
               return {
                 id: p.id,
                 slug: p.slug || p.id,
                 title: p.title || p.name || "Product",
                 price: p.price || 0,
-                mrp: p.mrp || Math.round((p.price || 100) * 1.35),
+                mrp: p.mrp || p.price,
                 discount: p.discount || "SPECIAL",
-                rating: p.rating || 4.5,
-                reviews: p.reviews || "100+",
+                rating: p.reviewCount > 0 ? p.rating : 0,
+                reviews: p.reviewCount || 0,
                 image: finalImg,
                 stock: p.stock ?? 10,
               };
             });
             setProducts(mappedProducts);
-            loadAdminSettingsAndProducts(mappedProducts);
+            if (!data.dealProducts?.length) setDealProductsList(mappedProducts.slice(0, 5));
           }
         }
 
@@ -258,7 +234,7 @@ export default function HomePage() {
           title: product.title,
           price: product.price,
           originalPrice: product.mrp,
-          image: product.image || "/logo.png",
+          image: product.image || "/product-placeholder.svg",
           quantity: 1,
           stock: product.stock,
           selectedSize: null,
@@ -292,7 +268,7 @@ export default function HomePage() {
         {/* 1. Hero Banner */}
         <section>
           <div className="bg-[#0F172A] text-white rounded-3xl p-6 sm:p-10 relative overflow-hidden shadow-md flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div className="max-w-2xl">
+            <div className="max-w-2xl md:w-3/5">
               <span className="inline-block px-2.5 py-1 bg-amber-400/20 text-amber-300 rounded-md text-[10px] font-black uppercase tracking-wider mb-3">
                 {heroBanner.badge}
               </span>
@@ -311,6 +287,13 @@ export default function HomePage() {
                   Shop Now <ArrowRight className="w-4 h-4" />
                 </Link>
               </div>
+            </div>
+            <div className="grid grid-cols-3 md:grid-cols-2 gap-3 md:w-2/5" aria-label="Explore the store">
+              {[["🎧", "Smart Gadgets"], ["🍳", "Kitchen Essentials"], ["🏠", "Home Utilities"], ["🧸", "Toys & More"]].map(([icon, label]) => (
+                <Link key={label} href="/shop" className="rounded-2xl border border-white/15 bg-white/10 p-4 text-center hover:bg-white/20">
+                  <span className="block text-3xl mb-2" aria-hidden="true">{icon}</span><span className="text-xs font-bold">{label}</span>
+                </Link>
+              ))}
             </div>
           </div>
         </section>
@@ -353,7 +336,7 @@ export default function HomePage() {
 
         {/* 3. Deal of the Day (Sliding 5 Products) */}
         {currentDealProduct && (() => {
-          const dealMrp = currentDealProduct.mrp > currentDealProduct.price ? currentDealProduct.mrp : Math.round(currentDealProduct.price * 1.35);
+          const dealMrp = currentDealProduct.mrp > currentDealProduct.price ? currentDealProduct.mrp : currentDealProduct.price;
           const dealDiscount = Math.round(((dealMrp - currentDealProduct.price) / dealMrp) * 100);
           const isWish = wishlistIds.includes(currentDealProduct.id);
 
@@ -394,7 +377,7 @@ export default function HomePage() {
                   </button>
 
                   <img
-                    src={currentDealProduct.image || "/logo.png"}
+                    src={currentDealProduct.image || "/product-placeholder.svg"}
                     alt={currentDealProduct.title}
                     className="w-32 h-32 rounded-xl object-contain bg-slate-50 border border-slate-100 shrink-0 p-2"
                   />
@@ -433,7 +416,7 @@ export default function HomePage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
             {products.map((item) => {
               const qty = cartQuantities[item.id] || 0;
-              const itemMrp = item.mrp > item.price ? item.mrp : Math.round(item.price * 1.35);
+              const itemMrp = item.mrp > item.price ? item.mrp : item.price;
               const itemDiscount = Math.round(((itemMrp - item.price) / itemMrp) * 100);
               const isWish = wishlistIds.includes(item.id);
 
@@ -442,7 +425,7 @@ export default function HomePage() {
                   <div>
                     <div className="block aspect-square bg-slate-50 rounded-xl overflow-hidden mb-2 relative flex items-center justify-center">
                       <Link href={`/product/${item.slug || item.id}`} className="block w-full h-full flex items-center justify-center">
-                        <img src={item.image || "/logo.png"} alt={item.title} className="w-full h-full object-contain p-2 group-hover:scale-105 transition duration-300" />
+                        <img src={item.image || "/product-placeholder.svg"} alt={item.title} className="w-full h-full object-contain p-2 group-hover:scale-105 transition duration-300" />
                       </Link>
 
                       {/* TOP-LEFT CORNER DISCOUNT BADGE */}
@@ -505,7 +488,7 @@ export default function HomePage() {
             <div className="grid grid-cols-3 gap-2 text-[11px] font-bold text-center">
               <div className="flex flex-col items-center gap-1.5 p-2 bg-emerald-800/50 rounded-2xl">
                 <CreditCard className="w-5 h-5 text-emerald-300" />
-                <span>Extra 5% Off</span>
+                <span>Free Prepaid Delivery</span>
               </div>
               <div className="flex flex-col items-center gap-1.5 p-2 bg-emerald-800/50 rounded-2xl">
                 <Truck className="w-5 h-5 text-emerald-300" />
@@ -524,7 +507,7 @@ export default function HomePage() {
               <h4 className="text-xs font-black uppercase tracking-wider text-rose-600">AVAILABLE COUPON</h4>
             </div>
             {!singleActiveCoupon ? (
-              <p className="text-xs text-slate-600 font-medium">Use code <b className="text-rose-700 font-mono">CATCH10</b> at checkout for special discount!</p>
+              <p className="text-xs text-slate-600 font-medium">Current offers will appear here when available.</p>
             ) : (
               <div className="flex items-center gap-2 pt-1">
                 <div className="px-3.5 py-2 bg-white border border-rose-200 rounded-xl text-xs font-black font-mono text-rose-700 shadow-2xs">
@@ -541,7 +524,7 @@ export default function HomePage() {
         {/* 6. WhatsApp Support Section */}
         <section>
           <a
-            href="https://wa.me/917976152206?text=Hi%20CatchBuddy%2C%20I%20need%20help%20with%20my%20order"
+            href="https://wa.me/916350108713?text=Hi%20CatchBuddy%2C%20I%20need%20help%20with%20my%20order"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-900 font-bold text-xs hover:bg-emerald-100 transition cursor-pointer shadow-xs"
@@ -549,7 +532,7 @@ export default function HomePage() {
             <MessageCircle className="w-6 h-6 text-emerald-600 shrink-0" />
             <div className="flex-1">
               <div className="text-sm font-black">Need Help? Chat with us on WhatsApp</div>
-              <div className="text-xs text-emerald-700 font-medium">+91 7976152206</div>
+              <div className="text-xs text-emerald-700 font-medium">+91 6350108713</div>
             </div>
           </a>
         </section>

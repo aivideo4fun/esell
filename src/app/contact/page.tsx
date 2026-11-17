@@ -1,5 +1,7 @@
 "use client";
 
+import { storeInfo } from "@/lib/store-info";
+import BusinessIdentity from "@/components/BusinessIdentity";
 import { useState } from "react";
 import Link from "next/link";
 import { 
@@ -77,7 +79,7 @@ export default function ContactSupportPage() {
         {/* Header */}
         <div className="text-center space-y-3">
           <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-bold border border-emerald-200">
-            <HelpCircle className="w-3.5 h-3.5" /> 24/7 Dedicated Support
+            <HelpCircle className="w-3.5 h-3.5" /> Customer Support
           </div>
           <h1 className="text-3xl font-black text-slate-950">How can we help you today?</h1>
           <p className="text-xs text-slate-500 max-w-lg mx-auto font-semibold">
@@ -93,7 +95,7 @@ export default function ContactSupportPage() {
             </div>
             <div>
               <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Email Us</p>
-              <p className="text-xs font-black text-slate-900 mt-0.5">support@catchbuddy.com</p>
+              <p className="text-xs font-black text-slate-900 mt-0.5"><a href={`mailto:${storeInfo.supportEmail}`}>{storeInfo.supportEmail}</a></p>
             </div>
           </div>
 
@@ -103,7 +105,7 @@ export default function ContactSupportPage() {
             </div>
             <div>
               <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Phone Support</p>
-              <p className="text-xs font-black text-slate-900 mt-0.5">+91 98765 43210</p>
+              <p className="text-xs font-black text-slate-900 mt-0.5"><a href={storeInfo.supportPhoneHref}>{storeInfo.supportPhone}</a></p>
             </div>
           </div>
 
@@ -113,10 +115,12 @@ export default function ContactSupportPage() {
             </div>
             <div>
               <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Working Hours</p>
-              <p className="text-xs font-black text-slate-900 mt-0.5">10:00 AM - 7:00 PM (IST)</p>
+              <p className="text-xs font-black text-slate-900 mt-0.5">{storeInfo.supportHours}</p>
             </div>
           </div>
         </div>
+
+        <BusinessIdentity />
 
         {/* Main Section: Ticket Form + Quick FAQ */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">

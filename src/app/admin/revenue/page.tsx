@@ -6,7 +6,7 @@ import { TrendingUp, ArrowUpRight, Loader2 } from "lucide-react";
 export default function AdminRevenuePage() {
   const [stats, setStats] = useState<{
     grossGMV: number;
-    netMargin: number;
+    netMargin: number | null;
     aov: number;
     totalOrdersCount: number;
   } | null>(null);
@@ -40,8 +40,8 @@ export default function AdminRevenuePage() {
   }
 
   const metrics = [
-    { title: "Gross GMV", val: `₹${(stats?.grossGMV || 0).toLocaleString("en-IN")}`, growth: "+18.4%" },
-    { title: "Estimated Net Margin", val: `₹${(stats?.netMargin || 0).toLocaleString("en-IN")}`, growth: "Live 28%" },
+    { title: "Gross GMV", val: `₹${(stats?.grossGMV || 0).toLocaleString("en-IN")}`, growth: "Verified paid orders" },
+    { title: "Net Margin", val: "Not calculated", growth: "Cost data required" },
     { title: "Avg Order Value (AOV)", val: `₹${(stats?.aov || 0).toLocaleString("en-IN")}`, growth: "Real-time" },
     { title: "Total Store Orders", val: `${stats?.totalOrdersCount || 0} Orders`, growth: "Database" },
   ];

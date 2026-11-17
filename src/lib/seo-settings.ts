@@ -1,0 +1,1 @@
+export const seoDefaults = { metaTitle: "CatchBuddy | Smart Gadgets & Everyday Essentials", metaDescription: "Shop gadgets, home utilities and everyday essentials at CatchBuddy.", keywords: "catchbuddy, gadgets, home utilities", googleSiteVerification: "" };
